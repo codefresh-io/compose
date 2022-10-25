@@ -1,5 +1,5 @@
-ARG GO_VERSION=1.17-alpine
-ARG GOLANGCI_LINT_VERSION=v1.40.1-alpine
+ARG GO_VERSION=1.17-bullseye-slim
+ARG GOLANGCI_LINT_VERSION=v1.40.1-bullseye-slim
 ARG PROTOC_GEN_GO_VERSION=v1.4.3
 
 FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION} AS base
@@ -30,7 +30,7 @@ RUN --mount=target=. \
     GIT_TAG=${GIT_TAG} \
     make COMPOSE_BINARY=/out/docker-compose -f builder.Makefile compose-plugin
 
-FROM alpine:3.16 AS compose-plugin
+FROM bullseye-slim AS compose-plugin
 WORKDIR /root
 COPY --from=make-compose-plugin /out/* /usr/local/bin/
 

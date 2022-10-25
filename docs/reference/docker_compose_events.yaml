@@ -14,7 +14,7 @@ long: |-
       "service": "web",
       "attributes": {
         "name": "application_web_1",
-        "image": "alpine:edge"
+        "image": "bullseye-slim:edge"
       }
   }
   ```

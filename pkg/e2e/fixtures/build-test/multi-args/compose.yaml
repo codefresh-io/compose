@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        IMAGE: alpine
+        IMAGE: bullseye-slim
         TAG: latest
       labels:
         - RESULT=SUCCESS

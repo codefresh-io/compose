@@ -1,6 +1,6 @@
 services:
   foo:
-    image: alpine
+    image: bullseye-slim
     entrypoint: ["sleep", "600"]
     networks:
       default:

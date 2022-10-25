@@ -1,8 +1,8 @@
 services:
   foo:
-    image: nginx:alpine
+    image: nginx:bullseye-slim
     depends_on:
       - bar
 
   bar:
-    image: nginx:alpine
+    image: nginx:bullseye-slim

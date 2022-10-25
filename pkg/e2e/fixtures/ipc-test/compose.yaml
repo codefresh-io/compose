@@ -1,13 +1,13 @@
 services:
   service:
-    image: alpine
+    image: bullseye-slim
     command: top
     ipc: "service:shareable"
   container:
-    image: alpine
+    image: bullseye-slim
     command: top
     ipc: "container:ipc_mode_container"
   shareable:
-    image: alpine
+    image: bullseye-slim
     command: top
     ipc: shareable

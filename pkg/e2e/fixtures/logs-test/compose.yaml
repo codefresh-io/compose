@@ -1,7 +1,7 @@
 services:
   ping:
-    image: alpine
+    image: bullseye-slim
     command: ping localhost -c 1
   hello:
-    image: alpine
+    image: bullseye-slim
     command: echo hello

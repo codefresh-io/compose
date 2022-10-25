@@ -1,7 +1,7 @@
 services:
   simple:
-    image: alpine
+    image: bullseye-slim
     command: top
   another:
-    image: alpine
+    image: bullseye-slim
     command: top

@@ -1,13 +1,13 @@
 services:
   fail:
-    image: alpine
+    image: bullseye-slim
     command: sleep infinity
     healthcheck:
       test: "false"
       interval: 1s
       retries: 3
   depends:
-    image: alpine
+    image: bullseye-slim
     command: sleep infinity
     depends_on:
       fail:
