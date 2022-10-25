@@ -12,7 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-FROM nginx:bullseye-slim
+FROM nginx:debian
 
 ARG FOO
 LABEL FOO=$FOO

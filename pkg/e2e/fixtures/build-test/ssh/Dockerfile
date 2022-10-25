@@ -15,7 +15,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-FROM bullseye-slim
+FROM debian
 RUN apk add --no-cache openssh-client
 
 WORKDIR /compose

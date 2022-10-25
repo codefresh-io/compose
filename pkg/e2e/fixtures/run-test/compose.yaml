@@ -1,20 +1,20 @@
 version: '3.8'
 services:
   back:
-    image: bullseye-slim
+    image: debian
     command: echo "Hello there!!"
     depends_on:
       - db
     networks:
       - backnet
   db:
-    image: nginx:bullseye-slim
+    image: nginx:debian
     networks:
       - backnet
     volumes:
       - data:/test
   front:
-    image: nginx:bullseye-slim
+    image: nginx:debian
     networks:
       - frontnet
 networks:

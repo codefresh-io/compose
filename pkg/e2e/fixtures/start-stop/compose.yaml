@@ -1,5 +1,5 @@
 services:
   simple:
-    image:  nginx:bullseye-slim
+    image:  nginx:debian
   another:
-    image:  nginx:bullseye-slim
+    image:  nginx:debian

@@ -1,4 +1,4 @@
 services:
   simple:
-    image:  nginx:bullseye-slim
+    image:  nginx:debian
     wrongField: test

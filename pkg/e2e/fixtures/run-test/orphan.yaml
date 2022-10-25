@@ -1,5 +1,5 @@
 version: '3.8'
 services:
   simple:
-    image: bullseye-slim
+    image: debian
     command: echo "Hi there!!"

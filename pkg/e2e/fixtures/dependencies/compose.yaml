@@ -1,8 +1,8 @@
 services:
   foo:
-    image: nginx:bullseye-slim
+    image: nginx:debian
     depends_on:
       - bar
 
   bar:
-    image: nginx:bullseye-slim
+    image: nginx:debian

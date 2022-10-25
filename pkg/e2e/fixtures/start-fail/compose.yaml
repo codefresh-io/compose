@@ -1,13 +1,13 @@
 services:
   fail:
-    image: bullseye-slim
+    image: debian
     command: sleep infinity
     healthcheck:
       test: "false"
       interval: 1s
       retries: 3
   depends:
-    image: bullseye-slim
+    image: debian
     command: sleep infinity
     depends_on:
       fail:

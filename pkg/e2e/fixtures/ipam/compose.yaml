@@ -1,6 +1,6 @@
 services:
   foo:
-    image: bullseye-slim
+    image: debian
     entrypoint: ["sleep", "600"]
     networks:
       default:

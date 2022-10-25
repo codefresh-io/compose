@@ -14,7 +14,7 @@ long: |-
       "service": "web",
       "attributes": {
         "name": "application_web_1",
-        "image": "bullseye-slim:edge"
+        "image": "debian:edge"
       }
   }
   ```

@@ -1,10 +1,10 @@
 services:
   foo:
-    image: bullseye-slim
+    image: debian
     command: "echo hello"
 
   bar:
-    image: bullseye-slim
+    image: debian
     command: "echo world"
     depends_on:
       foo:

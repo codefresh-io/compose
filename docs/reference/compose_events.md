@@ -27,7 +27,7 @@ With the `--json` flag, a json object is printed one per line with the format:
     "service": "web",
     "attributes": {
       "name": "application_web_1",
-      "image": "bullseye-slim:edge"
+      "image": "debian:edge"
     }
 }
 ```

@@ -1,13 +1,13 @@
 services:
   service:
-    image: bullseye-slim
+    image: debian
     command: top
     ipc: "service:shareable"
   container:
-    image: bullseye-slim
+    image: debian
     command: top
     ipc: "container:ipc_mode_container"
   shareable:
-    image: bullseye-slim
+    image: debian
     command: top
     ipc: shareable

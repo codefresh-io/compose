@@ -18,13 +18,13 @@
 ARG GO_VERSION=1.17
 ARG FORMATS=md,yaml
 
-FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION}-bullseye-slim AS docsgen
+FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION}-debian AS docsgen
 WORKDIR /src
 RUN --mount=target=. \
   --mount=target=/root/.cache,type=cache \
   go build -o /out/docsgen ./docs/yaml/main/generate.go
 
-FROM --platform=${BUILDPLATFORM} bullseye-slim AS gen
+FROM --platform=${BUILDPLATFORM} debian AS gen
 RUN apk add --no-cache rsync git
 WORKDIR /src
 COPY --from=docsgen /out/docsgen /usr/bin

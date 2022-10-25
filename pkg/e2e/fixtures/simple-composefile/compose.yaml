@@ -1,7 +1,7 @@
 services:
   simple:
-    image: bullseye-slim
+    image: debian
     command: top
   another:
-    image: bullseye-slim
+    image: debian
     command: top

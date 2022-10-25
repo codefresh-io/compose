@@ -1,7 +1,7 @@
 services:
   ping:
-    image: bullseye-slim
+    image: debian
     command: ping localhost -c 1
   hello:
-    image: bullseye-slim
+    image: debian
     command: echo hello

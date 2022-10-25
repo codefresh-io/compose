@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        IMAGE: bullseye-slim
+        IMAGE: debian
         TAG: latest
       labels:
         - RESULT=SUCCESS
