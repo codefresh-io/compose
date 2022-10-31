@@ -18,7 +18,7 @@
 ARG GO_VERSION=1.17
 ARG FORMATS=md,yaml
 
-FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION}-debian AS docsgen
+FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION}-bullseye-slim AS docsgen
 WORKDIR /src
 RUN --mount=target=. \
   --mount=target=/root/.cache,type=cache \
