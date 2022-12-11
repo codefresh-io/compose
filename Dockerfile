@@ -6,14 +6,7 @@ ARG BUILD_TAGS="e2e,kube"
 ARG DOCS_FORMATS="md,yaml"
 ARG LICENSE_FILES=".*\(Dockerfile\|Makefile\|\.go\|\.hcl\|\.sh\)"
 
-# xx is a helper for cross-compilation
-FROM --platform=${BUILDPLATFORM} tonistiigi/xx:${XX_VERSION} AS xx
-
-FROM golangci/golangci-lint:${GOLANGCI_LINT_VERSION}-alpine AS golangci-lint
-FROM ghcr.io/google/addlicense:${ADDLICENSE_VERSION} AS addlicense
-
-FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION}-alpine AS base
-COPY --from=xx / /
+FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION} AS base
 RUN apk add --no-cache \
       docker \
       file \
