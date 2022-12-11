@@ -32,6 +32,7 @@ import (
 	"github.com/docker/cli/cli"
 	"github.com/docker/compose/v2/pkg/api"
 	"github.com/docker/compose/v2/pkg/progress"
+	"github.com/docker/compose/v2/pkg/utils"
 )
 
 type runOptions struct {
@@ -113,8 +114,9 @@ func runCommand(p *projectOptions, dockerCli command.Cli, backend api.Service) *
 			projectOptions: p,
 		},
 	}
+	createOpts := createOptions{}
 	cmd := &cobra.Command{
-		Use:   "run [options] [-v VOLUME...] [-p PORT...] [-e KEY=VAL...] [-l KEY=VALUE...] SERVICE [COMMAND] [ARGS...]",
+		Use:   "run [OPTIONS] SERVICE [COMMAND] [ARGS...]",
 		Short: "Run a one-off command on a service.",
 		Args:  cobra.MinimumNArgs(1),
 		PreRunE: AdaptCmd(func(ctx context.Context, cmd *cobra.Command, args []string) error {
@@ -139,11 +141,10 @@ func runCommand(p *projectOptions, dockerCli command.Cli, backend api.Service) *
 			if err != nil {
 				return err
 			}
-			ignore := project.Environment["COMPOSE_IGNORE_ORPHANS"]
-			opts.ignoreOrphans = strings.ToLower(ignore) == "true"
-			return runRun(ctx, backend, project, opts)
+			opts.ignoreOrphans = utils.StringToBool(project.Environment["COMPOSE_IGNORE_ORPHANS"])
+			return runRun(ctx, backend, project, opts, createOpts)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 	flags := cmd.Flags()
 	flags.BoolVarP(&opts.Detach, "detach", "d", false, "Run container in background and print container ID")
@@ -151,7 +152,7 @@ func runCommand(p *projectOptions, dockerCli command.Cli, backend api.Service) *
 	flags.StringArrayVarP(&opts.labels, "label", "l", []string{}, "Add or override a label")
 	flags.BoolVar(&opts.Remove, "rm", false, "Automatically remove the container when it exits")
 	flags.BoolVarP(&opts.noTty, "no-TTY", "T", !dockerCli.Out().IsTerminal(), "Disable pseudo-TTY allocation (default: auto-detected).")
-	flags.StringVar(&opts.name, "name", "", " Assign a name to the container")
+	flags.StringVar(&opts.name, "name", "", "Assign a name to the container")
 	flags.StringVarP(&opts.user, "user", "u", "", "Run as specified username or uid")
 	flags.StringVarP(&opts.workdir, "workdir", "w", "", "Working directory inside the container")
 	flags.StringVar(&opts.entrypoint, "entrypoint", "", "Override the entrypoint of the image")
@@ -161,6 +162,7 @@ func runCommand(p *projectOptions, dockerCli command.Cli, backend api.Service) *
 	flags.BoolVar(&opts.useAliases, "use-aliases", false, "Use the service's network useAliases in the network(s) the container connects to.")
 	flags.BoolVar(&opts.servicePorts, "service-ports", false, "Run command with the service's ports enabled and mapped to the host.")
 	flags.BoolVar(&opts.quietPull, "quiet-pull", false, "Pull without printing progress information.")
+	flags.BoolVar(&createOpts.Build, "build", false, "Build image before starting container.")
 
 	cmd.Flags().BoolVarP(&opts.interactive, "interactive", "i", true, "Keep STDIN open even if not attached.")
 	cmd.Flags().BoolP("tty", "t", true, "Allocate a pseudo-TTY.")
@@ -181,11 +183,13 @@ func normalizeRunFlags(f *pflag.FlagSet, name string) pflag.NormalizedName {
 	return pflag.NormalizedName(name)
 }
 
-func runRun(ctx context.Context, backend api.Service, project *types.Project, opts runOptions) error {
+func runRun(ctx context.Context, backend api.Service, project *types.Project, opts runOptions, createOpts createOptions) error {
 	err := opts.apply(project)
 	if err != nil {
 		return err
 	}
+
+	createOpts.Apply(project)
 
 	err = progress.Run(ctx, func(ctx context.Context) error {
 		return startDependencies(ctx, backend, *project, opts.Service, opts.ignoreOrphans)
@@ -262,7 +266,9 @@ func startDependencies(ctx context.Context, backend api.Service, project types.P
 	}
 
 	if len(dependencies) > 0 {
-		return backend.Start(ctx, project.Name, api.StartOptions{})
+		return backend.Start(ctx, project.Name, api.StartOptions{
+			Project: &project,
+		})
 	}
 	return nil
 }

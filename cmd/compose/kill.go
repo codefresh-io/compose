@@ -18,15 +18,18 @@ package compose
 
 import (
 	"context"
+	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/docker/compose/v2/pkg/api"
+	"github.com/docker/compose/v2/pkg/utils"
 )
 
 type killOptions struct {
 	*projectOptions
-	signal string
+	removeOrphans bool
+	signal        string
 }
 
 func killCommand(p *projectOptions, backend api.Service) *cobra.Command {
@@ -34,29 +37,33 @@ func killCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		projectOptions: p,
 	}
 	cmd := &cobra.Command{
-		Use:   "kill [options] [SERVICE...]",
+		Use:   "kill [OPTIONS] [SERVICE...]",
 		Short: "Force stop service containers.",
 		RunE: Adapt(func(ctx context.Context, args []string) error {
 			return runKill(ctx, backend, opts, args)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 
 	flags := cmd.Flags()
+	removeOrphans := utils.StringToBool(os.Getenv("COMPOSE_REMOVE_ORPHANS"))
+	flags.BoolVar(&opts.removeOrphans, "remove-orphans", removeOrphans, "Remove containers for services not defined in the Compose file.")
 	flags.StringVarP(&opts.signal, "signal", "s", "SIGKILL", "SIGNAL to send to the container.")
 
 	return cmd
 }
 
 func runKill(ctx context.Context, backend api.Service, opts killOptions, services []string) error {
-	projectName, err := opts.toProjectName()
+	project, name, err := opts.projectOrName(services...)
 	if err != nil {
 		return err
 	}
 
-	return backend.Kill(ctx, projectName, api.KillOptions{
-		Services: services,
-		Signal:   opts.signal,
+	return backend.Kill(ctx, name, api.KillOptions{
+		RemoveOrphans: opts.removeOrphans,
+		Project:       project,
+		Services:      services,
+		Signal:        opts.signal,
 	})
 
 }

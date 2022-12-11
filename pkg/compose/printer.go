@@ -21,8 +21,6 @@ import (
 	"fmt"
 
 	"github.com/docker/compose/v2/pkg/api"
-
-	"github.com/sirupsen/logrus"
 )
 
 // logPrinter watch application containers an collect their logs
@@ -30,14 +28,23 @@ type logPrinter interface {
 	HandleEvent(event api.ContainerEvent)
 	Run(ctx context.Context, cascadeStop bool, exitCodeFrom string, stopFn func() error) (int, error)
 	Cancel()
+	Stop()
+}
+
+type printer struct {
+	queue    chan api.ContainerEvent
+	consumer api.LogConsumer
+	stopCh   chan struct{}
 }
 
 // newLogPrinter builds a LogPrinter passing containers logs to LogConsumer
 func newLogPrinter(consumer api.LogConsumer) logPrinter {
 	queue := make(chan api.ContainerEvent)
+	stopCh := make(chan struct{}, 1) // printer MAY stop on his own, so Stop MUST not be blocking
 	printer := printer{
 		consumer: consumer,
 		queue:    queue,
+		stopCh:   stopCh,
 	}
 	return &printer
 }
@@ -48,9 +55,8 @@ func (p *printer) Cancel() {
 	}
 }
 
-type printer struct {
-	queue    chan api.ContainerEvent
-	consumer api.LogConsumer
+func (p *printer) Stop() {
+	p.stopCh <- struct{}{}
 }
 
 func (p *printer) HandleEvent(event api.ContainerEvent) {
@@ -66,6 +72,8 @@ func (p *printer) Run(ctx context.Context, cascadeStop bool, exitCodeFrom string
 	containers := map[string]struct{}{}
 	for {
 		select {
+		case <-p.stopCh:
+			return exitCode, nil
 		case <-ctx.Done():
 			return exitCode, ctx.Err()
 		case event := <-p.queue:
@@ -95,12 +103,13 @@ func (p *printer) Run(ctx context.Context, cascadeStop bool, exitCodeFrom string
 							return 0, err
 						}
 					}
-					if exitCodeFrom == "" {
-						exitCodeFrom = event.Service
-					}
-					if exitCodeFrom == event.Service {
-						logrus.Error(event.ExitCode)
-						exitCode = event.ExitCode
+					if event.Type == api.ContainerEventExit {
+						if exitCodeFrom == "" {
+							exitCodeFrom = event.Service
+						}
+						if exitCodeFrom == event.Service {
+							exitCode = event.ExitCode
+						}
 					}
 				}
 				if len(containers) == 0 {

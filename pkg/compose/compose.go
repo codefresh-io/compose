@@ -17,7 +17,6 @@
 package compose
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,29 +24,31 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/types"
+	"github.com/distribution/distribution/v3/reference"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/streams"
-	"github.com/docker/compose/v2/pkg/api"
 	moby "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-	"github.com/sanathkr/go-yaml"
-)
+	"gopkg.in/yaml.v2"
 
-// Separator is used for naming components
-var Separator = "-"
+	"github.com/docker/compose/v2/pkg/api"
+)
 
 // NewComposeService create a local implementation of the compose.Service API
 func NewComposeService(dockerCli command.Cli) api.Service {
 	return &composeService{
-		dockerCli: dockerCli,
+		dockerCli:      dockerCli,
+		maxConcurrency: -1,
 	}
 }
 
 type composeService struct {
-	dockerCli command.Cli
+	dockerCli      command.Cli
+	maxConcurrency int
 }
 
 func (s *composeService) apiClient() client.APIClient {
@@ -56,6 +57,10 @@ func (s *composeService) apiClient() client.APIClient {
 
 func (s *composeService) configFile() *configfile.ConfigFile {
 	return s.dockerCli.ConfigFile()
+}
+
+func (s *composeService) MaxConcurrency(i int) {
+	s.maxConcurrency = i
 }
 
 func (s *composeService) stdout() *streams.Out {
@@ -95,28 +100,35 @@ func getContainerNameWithoutProject(c moby.Container) string {
 }
 
 func (s *composeService) Convert(ctx context.Context, project *types.Project, options api.ConvertOptions) ([]byte, error) {
+	if options.ResolveImageDigests {
+		info, err := s.apiClient().Info(ctx)
+		if err != nil {
+			return nil, err
+		}
+		err = project.ResolveImages(func(named reference.Named) (digest.Digest, error) {
+			auth, err := encodedAuth(named, info, s.configFile())
+			if err != nil {
+				return "", err
+			}
+			inspect, err := s.apiClient().DistributionInspect(ctx, named.String(), auth)
+			if err != nil {
+				return "", err
+			}
+			return inspect.Descriptor.Digest, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	switch options.Format {
 	case "json":
-		marshal, err := json.MarshalIndent(project, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return escapeDollarSign(marshal), nil
+		return json.MarshalIndent(project, "", "  ")
 	case "yaml":
-		marshal, err := yaml.Marshal(project)
-		if err != nil {
-			return nil, err
-		}
-		return escapeDollarSign(marshal), nil
+		return yaml.Marshal(project)
 	default:
-		return nil, fmt.Errorf("unsupported format %q", options)
+		return nil, fmt.Errorf("unsupported format %q", options.Format)
 	}
-}
-
-func escapeDollarSign(marshal []byte) []byte {
-	dollar := []byte{'$'}
-	escDollar := []byte{'$', '$'}
-	return bytes.ReplaceAll(marshal, dollar, escDollar)
 }
 
 // projectFromName builds a types.Project based on actual resources with compose labels set
@@ -173,26 +185,6 @@ SERVICES:
 	}
 
 	return project, nil
-}
-
-// actualState list resources labelled by projectName to rebuild compose project model
-func (s *composeService) actualState(ctx context.Context, projectName string, services []string) (Containers, *types.Project, error) {
-	var containers Containers
-	// don't filter containers by options.Services so projectFromName can rebuild project with all existing resources
-	containers, err := s.getContainers(ctx, projectName, oneOffInclude, true)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	project, err := s.projectFromName(containers, projectName, services...)
-	if err != nil && !api.IsNotFoundError(err) {
-		return nil, nil, err
-	}
-
-	if len(services) > 0 {
-		containers = containers.filter(isService(services...))
-	}
-	return containers, project, nil
 }
 
 func (s *composeService) actualVolumes(ctx context.Context, projectName string) (types.Volumes, error) {

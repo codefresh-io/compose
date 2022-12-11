@@ -50,7 +50,7 @@ func execCommand(p *projectOptions, dockerCli command.Cli, backend api.Service) 
 		},
 	}
 	runCmd := &cobra.Command{
-		Use:   "exec [options] [-e KEY=VAL...] [--] SERVICE COMMAND [ARGS...]",
+		Use:   "exec [OPTIONS] SERVICE COMMAND [ARGS...]",
 		Short: "Execute a command in a running container.",
 		Args:  cobra.MinimumNArgs(2),
 		PreRunE: Adapt(func(ctx context.Context, args []string) error {
@@ -61,7 +61,7 @@ func execCommand(p *projectOptions, dockerCli command.Cli, backend api.Service) 
 		RunE: Adapt(func(ctx context.Context, args []string) error {
 			return runExec(ctx, backend, opts)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 
 	runCmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Detached mode: Run command in the background.")

@@ -38,19 +38,20 @@ func pauseCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		RunE: Adapt(func(ctx context.Context, args []string) error {
 			return runPause(ctx, backend, opts, args)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 	return cmd
 }
 
 func runPause(ctx context.Context, backend api.Service, opts pauseOptions, services []string) error {
-	project, err := opts.toProjectName()
+	project, name, err := opts.projectOrName(services...)
 	if err != nil {
 		return err
 	}
 
-	return backend.Pause(ctx, project, api.PauseOptions{
+	return backend.Pause(ctx, name, api.PauseOptions{
 		Services: services,
+		Project:  project,
 	})
 }
 
@@ -68,18 +69,19 @@ func unpauseCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		RunE: Adapt(func(ctx context.Context, args []string) error {
 			return runUnPause(ctx, backend, opts, args)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 	return cmd
 }
 
 func runUnPause(ctx context.Context, backend api.Service, opts unpauseOptions, services []string) error {
-	project, err := opts.toProjectName()
+	project, name, err := opts.projectOrName(services...)
 	if err != nil {
 		return err
 	}
 
-	return backend.UnPause(ctx, project, api.PauseOptions{
+	return backend.UnPause(ctx, name, api.PauseOptions{
 		Services: services,
+		Project:  project,
 	})
 }

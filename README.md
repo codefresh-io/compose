@@ -1,3 +1,11 @@
+# Table of Contents
+- [Docker Compose v2](#docker-compose-v2)
+- [About update and backward compatibility](#about-update-and-backward-compatibility)
+- [Where to get Docker Compose](#where-to-get-docker-compose)
+    + [Windows and macOS](#windows-and-macos)
+    + [Linux](#linux)
+- [Quick Start](#quick-start)
+- [Contributing](#contributing)
 # Docker Compose v2
 
 ## ** Codefresh fork **
@@ -15,7 +23,7 @@ The image is based on the official docker-compose github repo. The reason why it
 
 Docker Compose is a tool for running multi-container applications on Docker
 defined using the [Compose file format](https://compose-spec.io).
-A Compose file is used to define how the one or more containers that make up
+A Compose file is used to define how one or more containers that make up
 your application are configured.
 Once you have a Compose file, you can create and start your application with a
 single command: `docker compose up`.
@@ -39,20 +47,20 @@ for Windows and macOS.
 You can download Docker Compose binaries from the
 [release page](https://github.com/docker/compose/releases) on this repository.
 
-Rename the relevant binary for your OS to `docker-compose` and copy it to `$HOME/.docker/cli-plugins` 
+Rename the relevant binary for your OS to `docker-compose` and copy it to `$HOME/.docker/cli-plugins`
 
-Or copy it into one of these folders for installing it system-wide:
+Or copy it into one of these folders to install it system-wide:
 
 * `/usr/local/lib/docker/cli-plugins` OR `/usr/local/libexec/docker/cli-plugins`
 * `/usr/lib/docker/cli-plugins` OR `/usr/libexec/docker/cli-plugins`
 
-(might require to make the downloaded file executable with `chmod +x`)
+(might require making the downloaded file executable with `chmod +x`)
 
 
 Quick Start
 -----------
 
-Using Docker Compose is basically a three-step process:
+Using Docker Compose is a three-step process:
 1. Define your app's environment with a `Dockerfile` so it can be
    reproduced anywhere.
 2. Define the services that make up your app in `docker-compose.yml` so

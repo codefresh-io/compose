@@ -7,12 +7,13 @@ Run a one-off command on a service.
 
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
+| `--build` |  |  | Build image before starting container. |
 | `-d`, `--detach` |  |  | Run container in background and print container ID |
 | `--entrypoint` | `string` |  | Override the entrypoint of the image |
 | `-e`, `--env` | `stringArray` |  | Set environment variables |
 | `-i`, `--interactive` |  |  | Keep STDIN open even if not attached. |
 | `-l`, `--label` | `stringArray` |  | Add or override a label |
-| `--name` | `string` |  |  Assign a name to the container |
+| `--name` | `string` |  | Assign a name to the container |
 | `-T`, `--no-TTY` |  |  | Disable pseudo-TTY allocation (default: auto-detected). |
 | `--no-deps` |  |  | Don't start linked services. |
 | `-p`, `--publish` | `stringArray` |  | Publish a container's port(s) to the host. |

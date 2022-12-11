@@ -23,11 +23,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/docker/compose/v2/pkg/api"
-	"github.com/docker/compose/v2/pkg/progress"
-
 	"github.com/compose-spec/compose-go/types"
 	"github.com/docker/cli/cli"
+	"github.com/docker/compose/v2/pkg/api"
+	"github.com/docker/compose/v2/pkg/progress"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -60,13 +59,15 @@ func (s *composeService) Up(ctx context.Context, project *types.Project, options
 		return progress.Run(ctx, func(ctx context.Context) error {
 			go func() {
 				<-signalChan
-				s.Kill(ctx, project.Name, api.KillOptions{ // nolint:errcheck
+				s.Kill(ctx, project.Name, api.KillOptions{ //nolint:errcheck
 					Services: options.Create.Services,
+					Project:  project,
 				})
 			}()
 
 			return s.Stop(ctx, project.Name, api.StopOptions{
 				Services: options.Create.Services,
+				Project:  project,
 			})
 		})
 	}
@@ -74,7 +75,7 @@ func (s *composeService) Up(ctx context.Context, project *types.Project, options
 		<-signalChan
 		printer.Cancel()
 		fmt.Println("Gracefully stopping... (press Ctrl+C again to force)")
-		stopFunc() // nolint:errcheck
+		stopFunc() //nolint:errcheck
 	}()
 
 	var exitCode int
@@ -90,6 +91,7 @@ func (s *composeService) Up(ctx context.Context, project *types.Project, options
 		return err
 	}
 
+	printer.Stop()
 	err = eg.Wait()
 	if exitCode != 0 {
 		errMsg := ""

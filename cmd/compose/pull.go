@@ -43,7 +43,7 @@ func pullCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		projectOptions: p,
 	}
 	cmd := &cobra.Command{
-		Use:   "pull [SERVICE...]",
+		Use:   "pull [OPTIONS] [SERVICE...]",
 		Short: "Pull service images",
 		PreRunE: Adapt(func(ctx context.Context, args []string) error {
 			if opts.noParallel {
@@ -54,7 +54,7 @@ func pullCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		RunE: Adapt(func(ctx context.Context, args []string) error {
 			return runPull(ctx, backend, opts, args)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 	flags := cmd.Flags()
 	flags.BoolVarP(&opts.quiet, "quiet", "q", false, "Pull without printing progress information")

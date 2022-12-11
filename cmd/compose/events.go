@@ -38,12 +38,12 @@ func eventsCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		},
 	}
 	cmd := &cobra.Command{
-		Use:   "events [options] [--] [SERVICE...]",
+		Use:   "events [OPTIONS] [SERVICE...]",
 		Short: "Receive real time events from containers.",
 		RunE: Adapt(func(ctx context.Context, args []string) error {
 			return runEvents(ctx, backend, opts, args)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 
 	cmd.Flags().BoolVar(&opts.json, "json", false, "Output events as a stream of json objects")
@@ -51,12 +51,12 @@ func eventsCommand(p *projectOptions, backend api.Service) *cobra.Command {
 }
 
 func runEvents(ctx context.Context, backend api.Service, opts eventsOpts, services []string) error {
-	project, err := opts.toProjectName()
+	name, err := opts.toProjectName()
 	if err != nil {
 		return err
 	}
 
-	return backend.Events(ctx, project, api.EventsOptions{
+	return backend.Events(ctx, name, api.EventsOptions{
 		Services: services,
 		Consumer: func(event api.Event) error {
 			if opts.json {

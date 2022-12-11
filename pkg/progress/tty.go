@@ -75,7 +75,7 @@ func (w *ttyWriter) Event(e Event) {
 	if _, ok := w.events[e.ID]; ok {
 		last := w.events[e.ID]
 		switch e.Status {
-		case Done, Error:
+		case Done, Error, Warning:
 			if last.Status != e.Status {
 				last.stop()
 			}
@@ -83,7 +83,10 @@ func (w *ttyWriter) Event(e Event) {
 		last.Status = e.Status
 		last.Text = e.Text
 		last.StatusText = e.StatusText
-		last.ParentID = e.ParentID
+		// allow set/unset of parent, but not swapping otherwise prompt is flickering
+		if last.ParentID == "" || e.ParentID == "" {
+			last.ParentID = e.ParentID
+		}
 		w.events[e.ID] = last
 	} else {
 		e.startTime = time.Now()
@@ -161,14 +164,12 @@ func (w *ttyWriter) print() {
 			continue
 		}
 		line := lineText(event, "", terminalWidth, statusPadding, runtime.GOOS != "windows")
-		// nolint: errcheck
 		fmt.Fprint(w.out, line)
 		numLines++
 		for _, v := range w.eventIDs {
 			ev := w.events[v]
 			if ev.ParentID == event.ID {
 				line := lineText(ev, "  ", terminalWidth, statusPadding, runtime.GOOS != "windows")
-				// nolint: errcheck
 				fmt.Fprint(w.out, line)
 				numLines++
 			}
@@ -220,6 +221,9 @@ func lineText(event Event, pad string, terminalWidth, statusPadding int, color b
 		}
 		if event.Status == Error {
 			color = aec.RedF
+		}
+		if event.Status == Warning {
+			color = aec.YellowF
 		}
 		return aec.Apply(o, color)
 	}

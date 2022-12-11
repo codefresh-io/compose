@@ -21,41 +21,52 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
+	"github.com/compose-spec/compose-go/types"
 	buildx "github.com/docker/buildx/build"
 	"github.com/docker/cli/cli/command/image/build"
 	dockertypes "github.com/docker/docker/api/types"
+	"github.com/docker/docker/builder/remotecontext/urlutil"
 	"github.com/docker/docker/cli"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/progress"
 	"github.com/docker/docker/pkg/streamformatter"
-	"github.com/docker/docker/pkg/urlutil"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
+
+	"github.com/docker/compose/v2/pkg/api"
 )
 
-func (s *composeService) doBuildClassic(ctx context.Context, opts map[string]buildx.Options) (map[string]string, error) {
+func (s *composeService) doBuildClassic(ctx context.Context, project *types.Project, opts map[string]buildx.Options) (map[string]string, error) {
 	var nameDigests = make(map[string]string)
 	var errs error
-	for name, o := range opts {
+	err := project.WithServices(nil, func(service types.ServiceConfig) error {
+		imageName := api.GetImageNameOrDefault(service, project.Name)
+		o, ok := opts[imageName]
+		if !ok {
+			return nil
+		}
 		digest, err := s.doBuildClassicSimpleImage(ctx, o)
 		if err != nil {
 			errs = multierror.Append(errs, err).ErrorOrNil()
 		}
-		nameDigests[name] = digest
+		nameDigests[imageName] = digest
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return nameDigests, errs
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func (s *composeService) doBuildClassicSimpleImage(ctx context.Context, options buildx.Options) (string, error) {
 	var (
 		buildCtx      io.ReadCloser
@@ -78,6 +89,15 @@ func (s *composeService) doBuildClassicSimpleImage(ctx context.Context, options 
 		}
 	}
 
+	if len(options.Platforms) > 1 {
+		return "", errors.Errorf("this builder doesn't support multi-arch build, set DOCKER_BUILDKIT=1 to use multi-arch builder")
+	}
+
+	if options.Labels == nil {
+		options.Labels = make(map[string]string)
+	}
+	options.Labels[api.ImageBuilderLabel] = "classic"
+
 	switch {
 	case isLocalDir(specifiedContext):
 		contextDir, relDockerfile, err = build.GetContextFromLocalDir(specifiedContext, dockerfileName)
@@ -87,7 +107,7 @@ func (s *composeService) doBuildClassicSimpleImage(ctx context.Context, options 
 			if err != nil {
 				return "", errors.Errorf("unable to open Dockerfile: %v", err)
 			}
-			defer dockerfileCtx.Close() // nolint:errcheck
+			defer dockerfileCtx.Close() //nolint:errcheck
 		}
 	case urlutil.IsGitURL(specifiedContext):
 		tempDir, relDockerfile, err = build.GetContextFromGitURL(specifiedContext, dockerfileName)
@@ -102,7 +122,7 @@ func (s *composeService) doBuildClassicSimpleImage(ctx context.Context, options 
 	}
 
 	if tempDir != "" {
-		defer os.RemoveAll(tempDir) // nolint:errcheck
+		defer os.RemoveAll(tempDir) //nolint:errcheck
 		contextDir = tempDir
 	}
 
@@ -166,7 +186,7 @@ func (s *composeService) doBuildClassicSimpleImage(ctx context.Context, options 
 	if err != nil {
 		return "", err
 	}
-	defer response.Body.Close() // nolint:errcheck
+	defer response.Body.Close() //nolint:errcheck
 
 	imageID := ""
 	aux := func(msg jsonmessage.JSONMessage) {
@@ -205,7 +225,7 @@ func (s *composeService) doBuildClassicSimpleImage(ctx context.Context, options 
 		if imageID == "" {
 			return "", errors.Errorf("Server did not provide an image ID. Cannot write %s", options.ImageIDFile)
 		}
-		if err := ioutil.WriteFile(options.ImageIDFile, []byte(imageID), 0666); err != nil {
+		if err := os.WriteFile(options.ImageIDFile, []byte(imageID), 0o666); err != nil {
 			return "", err
 		}
 	}
