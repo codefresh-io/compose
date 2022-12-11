@@ -37,6 +37,9 @@ func (s *composeService) attach(ctx context.Context, project *types.Project, lis
 	if err != nil {
 		return nil, err
 	}
+	if len(containers) == 0 {
+		return containers, nil
+	}
 
 	containers.sorted() // This enforce predictable colors assignment
 
@@ -127,9 +130,9 @@ func (s *composeService) attachContainerStreams(ctx context.Context, container s
 	if stdout != nil {
 		go func() {
 			if tty {
-				io.Copy(stdout, streamOut) // nolint:errcheck
+				io.Copy(stdout, streamOut) //nolint:errcheck
 			} else {
-				stdcopy.StdCopy(stdout, stderr, streamOut) // nolint:errcheck
+				stdcopy.StdCopy(stdout, stderr, streamOut) //nolint:errcheck
 			}
 		}()
 	}

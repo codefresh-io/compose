@@ -43,12 +43,12 @@ func imagesCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		projectOptions: p,
 	}
 	imgCmd := &cobra.Command{
-		Use:   "images [SERVICE...]",
+		Use:   "images [OPTIONS] [SERVICE...]",
 		Short: "List images used by the created containers",
 		RunE: Adapt(func(ctx context.Context, args []string) error {
 			return runImages(ctx, backend, opts, args)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 	imgCmd.Flags().BoolVarP(&opts.Quiet, "quiet", "q", false, "Only display IDs")
 	return imgCmd

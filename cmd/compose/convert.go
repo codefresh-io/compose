@@ -18,6 +18,7 @@ package compose
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -25,12 +26,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cnabio/cnab-to-oci/remotes"
 	"github.com/compose-spec/compose-go/cli"
 	"github.com/compose-spec/compose-go/types"
-	"github.com/distribution/distribution/v3/reference"
-	cliconfig "github.com/docker/cli/cli/config"
-	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 
 	"github.com/docker/compose/v2/pkg/api"
@@ -50,6 +47,7 @@ type convertOptions struct {
 	profiles            bool
 	images              bool
 	hash                string
+	noConsistency       bool
 }
 
 func convertCommand(p *projectOptions, backend api.Service) *cobra.Command {
@@ -58,7 +56,7 @@ func convertCommand(p *projectOptions, backend api.Service) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Aliases: []string{"config"},
-		Use:     "convert SERVICES",
+		Use:     "convert [OPTIONS] [SERVICE...]",
 		Short:   "Converts the compose file to platform's canonical format",
 		PreRunE: Adapt(func(ctx context.Context, args []string) error {
 			if opts.quiet {
@@ -92,7 +90,7 @@ func convertCommand(p *projectOptions, backend api.Service) *cobra.Command {
 
 			return runConvert(ctx, backend, opts, args)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.Format, "format", "yaml", "Format the output. Values: [yaml | json]")
@@ -100,6 +98,7 @@ func convertCommand(p *projectOptions, backend api.Service) *cobra.Command {
 	flags.BoolVarP(&opts.quiet, "quiet", "q", false, "Only validate the configuration, don't print anything.")
 	flags.BoolVar(&opts.noInterpolate, "no-interpolate", false, "Don't interpolate environment variables.")
 	flags.BoolVar(&opts.noNormalize, "no-normalize", false, "Don't normalize compose model.")
+	flags.BoolVar(&opts.noConsistency, "no-consistency", false, "Don't check model consistency - warning: may produce invalid Compose output")
 
 	flags.BoolVar(&opts.services, "services", false, "Print the service names, one per line.")
 	flags.BoolVar(&opts.volumes, "volumes", false, "Print the volume names, one per line.")
@@ -112,36 +111,29 @@ func convertCommand(p *projectOptions, backend api.Service) *cobra.Command {
 }
 
 func runConvert(ctx context.Context, backend api.Service, opts convertOptions, services []string) error {
-	var json []byte
+	var content []byte
 	project, err := opts.toProject(services,
 		cli.WithInterpolation(!opts.noInterpolate),
 		cli.WithResolvedPaths(true),
 		cli.WithNormalization(!opts.noNormalize),
+		cli.WithConsistency(!opts.noConsistency),
 		cli.WithDiscardEnvFile)
 
 	if err != nil {
 		return err
 	}
 
-	if opts.resolveImageDigests {
-		configFile := cliconfig.LoadDefaultConfigFile(os.Stderr)
-
-		resolver := remotes.CreateResolver(configFile)
-		err = project.ResolveImages(func(named reference.Named) (digest.Digest, error) {
-			_, desc, err := resolver.Resolve(ctx, named.String())
-			return desc.Digest, err
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	json, err = backend.Convert(ctx, project, api.ConvertOptions{
-		Format: opts.Format,
-		Output: opts.Output,
+	content, err = backend.Convert(ctx, project, api.ConvertOptions{
+		Format:              opts.Format,
+		Output:              opts.Output,
+		ResolveImageDigests: opts.resolveImageDigests,
 	})
 	if err != nil {
 		return err
+	}
+
+	if !opts.noInterpolate {
+		content = escapeDollarSign(content)
 	}
 
 	if opts.quiet {
@@ -149,14 +141,14 @@ func runConvert(ctx context.Context, backend api.Service, opts convertOptions, s
 	}
 
 	var out io.Writer = os.Stdout
-	if opts.Output != "" && len(json) > 0 {
+	if opts.Output != "" && len(content) > 0 {
 		file, err := os.Create(opts.Output)
 		if err != nil {
 			return err
 		}
 		out = bufio.NewWriter(file)
 	}
-	_, err = fmt.Fprint(out, string(json))
+	_, err = fmt.Fprint(out, string(content))
 	return err
 }
 
@@ -232,8 +224,14 @@ func runConfigImages(opts convertOptions, services []string) error {
 		if s.Image != "" {
 			fmt.Println(s.Image)
 		} else {
-			fmt.Printf("%s_%s\n", project.Name, s.Name)
+			fmt.Printf("%s%s%s\n", project.Name, api.Separator, s.Name)
 		}
 	}
 	return nil
+}
+
+func escapeDollarSign(marshal []byte) []byte {
+	dollar := []byte{'$'}
+	escDollar := []byte{'$', '$'}
+	return bytes.ReplaceAll(marshal, dollar, escDollar)
 }

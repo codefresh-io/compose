@@ -22,6 +22,8 @@ import (
 	"github.com/compose-spec/compose-go/types"
 )
 
+var _ Service = &ServiceProxy{}
+
 // ServiceProxy implements Service by delegating to implementation functions. This allows lazy init and per-method overrides
 type ServiceProxy struct {
 	BuildFn              func(ctx context.Context, project *types.Project, options BuildOptions) error
@@ -46,8 +48,9 @@ type ServiceProxy struct {
 	UnPauseFn            func(ctx context.Context, project string, options PauseOptions) error
 	TopFn                func(ctx context.Context, projectName string, services []string) ([]ContainerProcSummary, error)
 	EventsFn             func(ctx context.Context, project string, options EventsOptions) error
-	PortFn               func(ctx context.Context, project string, service string, port int, options PortOptions) (string, int, error)
+	PortFn               func(ctx context.Context, project string, service string, port uint16, options PortOptions) (string, int, error)
 	ImagesFn             func(ctx context.Context, projectName string, options ImagesOptions) ([]ImageSummary, error)
+	MaxConcurrencyFn     func(parallel int)
 	interceptors         []Interceptor
 }
 
@@ -58,8 +61,6 @@ func NewServiceProxy() *ServiceProxy {
 
 // Interceptor allow to customize the compose types.Project before the actual Service method is executed
 type Interceptor func(ctx context.Context, project *types.Project)
-
-var _ Service = &ServiceProxy{}
 
 // WithService configure proxy to use specified Service as delegate
 func (s *ServiceProxy) WithService(service Service) *ServiceProxy {
@@ -87,6 +88,7 @@ func (s *ServiceProxy) WithService(service Service) *ServiceProxy {
 	s.EventsFn = service.Events
 	s.PortFn = service.Port
 	s.ImagesFn = service.Images
+	s.MaxConcurrencyFn = service.MaxConcurrency
 	return s
 }
 
@@ -219,11 +221,11 @@ func (s *ServiceProxy) Convert(ctx context.Context, project *types.Project, opti
 }
 
 // Kill implements Service interface
-func (s *ServiceProxy) Kill(ctx context.Context, project string, options KillOptions) error {
+func (s *ServiceProxy) Kill(ctx context.Context, projectName string, options KillOptions) error {
 	if s.KillFn == nil {
 		return ErrNotImplemented
 	}
-	return s.KillFn(ctx, project, options)
+	return s.KillFn(ctx, projectName, options)
 }
 
 // RunOneOffContainer implements Service interface
@@ -238,43 +240,43 @@ func (s *ServiceProxy) RunOneOffContainer(ctx context.Context, project *types.Pr
 }
 
 // Remove implements Service interface
-func (s *ServiceProxy) Remove(ctx context.Context, project string, options RemoveOptions) error {
+func (s *ServiceProxy) Remove(ctx context.Context, projectName string, options RemoveOptions) error {
 	if s.RemoveFn == nil {
 		return ErrNotImplemented
 	}
-	return s.RemoveFn(ctx, project, options)
+	return s.RemoveFn(ctx, projectName, options)
 }
 
 // Exec implements Service interface
-func (s *ServiceProxy) Exec(ctx context.Context, project string, options RunOptions) (int, error) {
+func (s *ServiceProxy) Exec(ctx context.Context, projectName string, options RunOptions) (int, error) {
 	if s.ExecFn == nil {
 		return 0, ErrNotImplemented
 	}
-	return s.ExecFn(ctx, project, options)
+	return s.ExecFn(ctx, projectName, options)
 }
 
 // Copy implements Service interface
-func (s *ServiceProxy) Copy(ctx context.Context, project string, options CopyOptions) error {
+func (s *ServiceProxy) Copy(ctx context.Context, projectName string, options CopyOptions) error {
 	if s.CopyFn == nil {
 		return ErrNotImplemented
 	}
-	return s.CopyFn(ctx, project, options)
+	return s.CopyFn(ctx, projectName, options)
 }
 
 // Pause implements Service interface
-func (s *ServiceProxy) Pause(ctx context.Context, project string, options PauseOptions) error {
+func (s *ServiceProxy) Pause(ctx context.Context, projectName string, options PauseOptions) error {
 	if s.PauseFn == nil {
 		return ErrNotImplemented
 	}
-	return s.PauseFn(ctx, project, options)
+	return s.PauseFn(ctx, projectName, options)
 }
 
 // UnPause implements Service interface
-func (s *ServiceProxy) UnPause(ctx context.Context, project string, options PauseOptions) error {
+func (s *ServiceProxy) UnPause(ctx context.Context, projectName string, options PauseOptions) error {
 	if s.UnPauseFn == nil {
 		return ErrNotImplemented
 	}
-	return s.UnPauseFn(ctx, project, options)
+	return s.UnPauseFn(ctx, projectName, options)
 }
 
 // Top implements Service interface
@@ -286,19 +288,19 @@ func (s *ServiceProxy) Top(ctx context.Context, project string, services []strin
 }
 
 // Events implements Service interface
-func (s *ServiceProxy) Events(ctx context.Context, project string, options EventsOptions) error {
+func (s *ServiceProxy) Events(ctx context.Context, projectName string, options EventsOptions) error {
 	if s.EventsFn == nil {
 		return ErrNotImplemented
 	}
-	return s.EventsFn(ctx, project, options)
+	return s.EventsFn(ctx, projectName, options)
 }
 
 // Port implements Service interface
-func (s *ServiceProxy) Port(ctx context.Context, project string, service string, port int, options PortOptions) (string, int, error) {
+func (s *ServiceProxy) Port(ctx context.Context, projectName string, service string, port uint16, options PortOptions) (string, int, error) {
 	if s.PortFn == nil {
 		return "", 0, ErrNotImplemented
 	}
-	return s.PortFn(ctx, project, service, port, options)
+	return s.PortFn(ctx, projectName, service, port, options)
 }
 
 // Images implements Service interface
@@ -307,4 +309,8 @@ func (s *ServiceProxy) Images(ctx context.Context, project string, options Image
 		return nil, ErrNotImplemented
 	}
 	return s.ImagesFn(ctx, project, options)
+}
+
+func (s *ServiceProxy) MaxConcurrency(i int) {
+	s.MaxConcurrencyFn(i)
 }

@@ -21,16 +21,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/compose-spec/compose-go/types"
 	moby "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/blkiodev"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/strslice"
@@ -40,6 +40,8 @@ import (
 	"github.com/docker/go-units"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+
+	"github.com/compose-spec/compose-go/types"
 
 	"github.com/docker/compose/v2/pkg/api"
 	"github.com/docker/compose/v2/pkg/progress"
@@ -124,7 +126,8 @@ func prepareVolumes(p *types.Project) error {
 				p.Services[i].DependsOn = make(types.DependsOnConfig, len(dependServices))
 			}
 			for _, service := range p.Services {
-				if utils.StringContains(dependServices, service.Name) {
+				if utils.StringContains(dependServices, service.Name) &&
+					p.Services[i].DependsOn[service.Name].Condition == "" {
 					p.Services[i].DependsOn[service.Name] = types.ServiceDependency{
 						Condition: types.ServiceConditionStarted,
 					}
@@ -145,6 +148,9 @@ func prepareNetworks(project *types.Project) {
 }
 
 func prepareServicesDependsOn(p *types.Project) error {
+	allServices := types.Project{}
+	allServices.Services = p.AllServices()
+
 	for i, service := range p.Services {
 		var dependencies []string
 		networkDependency := getDependentServiceFromMode(service.NetworkMode)
@@ -177,16 +183,24 @@ func prepareServicesDependsOn(p *types.Project) error {
 			dependencies = append(dependencies, strings.Split(link, ":")[0])
 		}
 
+		for d := range service.DependsOn {
+			dependencies = append(dependencies, d)
+		}
+
 		if len(dependencies) == 0 {
 			continue
 		}
-		if service.DependsOn == nil {
-			service.DependsOn = make(types.DependsOnConfig)
-		}
-		deps, err := p.GetServices(dependencies...)
+
+		// Verify dependencies exist in the project, whether disabled or not
+		deps, err := allServices.GetServices(dependencies...)
 		if err != nil {
 			return err
 		}
+
+		if service.DependsOn == nil {
+			service.DependsOn = make(types.DependsOnConfig)
+		}
+
 		for _, d := range deps {
 			if _, ok := service.DependsOn[d.Name]; !ok {
 				service.DependsOn[d.Name] = types.ServiceDependency{
@@ -220,14 +234,6 @@ func (s *composeService) ensureProjectVolumes(ctx context.Context, project *type
 		}
 	}
 	return nil
-}
-
-func getImageName(service types.ServiceConfig, projectName string) string {
-	imageName := service.Image
-	if imageName == "" {
-		imageName = projectName + "_" + service.Name
-	}
-	return imageName
 }
 
 func (s *composeService) getCreateOptions(ctx context.Context, p *types.Project, service types.ServiceConfig,
@@ -274,7 +280,7 @@ func (s *composeService) getCreateOptions(ctx context.Context, p *types.Project,
 		AttachStderr:    true,
 		AttachStdout:    true,
 		Cmd:             runCmd,
-		Image:           getImageName(service, p.Name),
+		Image:           api.GetImageNameOrDefault(service, p.Name),
 		WorkingDir:      service.WorkingDir,
 		Entrypoint:      entrypoint,
 		NetworkDisabled: service.NetworkMode == "disabled",
@@ -309,8 +315,9 @@ func (s *composeService) getCreateOptions(ctx context.Context, p *types.Project,
 			ipv4Address = config.Ipv4Address
 			ipv6Address = config.Ipv6Address
 			ipam = &network.EndpointIPAMConfig{
-				IPv4Address: ipv4Address,
-				IPv6Address: ipv6Address,
+				IPv4Address:  ipv4Address,
+				IPv6Address:  ipv6Address,
+				LinkLocalIPs: config.LinkLocalIPs,
 			}
 		}
 		networkConfig = &network.NetworkingConfig{
@@ -351,6 +358,11 @@ func (s *composeService) getCreateOptions(ctx context.Context, p *types.Project,
 		volumesFrom = append(volumesFrom, v[len("container:"):])
 	}
 
+	links, err := s.getLinks(ctx, p.Name, service, number)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
 	securityOpts, err := parseSecurityOpts(p, service.SecurityOpt)
 	if err != nil {
 		return nil, nil, nil, err
@@ -375,7 +387,7 @@ func (s *composeService) getCreateOptions(ctx context.Context, p *types.Project,
 		DNS:            service.DNS,
 		DNSSearch:      service.DNSSearch,
 		DNSOptions:     service.DNSOpts,
-		ExtraHosts:     service.ExtraHosts,
+		ExtraHosts:     service.ExtraHosts.AsList(),
 		SecurityOpt:    securityOpts,
 		UsernsMode:     container.UsernsMode(service.UserNSMode),
 		Privileged:     service.Privileged,
@@ -385,6 +397,8 @@ func (s *composeService) getCreateOptions(ctx context.Context, p *types.Project,
 		Runtime:        service.Runtime,
 		LogConfig:      logConfig,
 		GroupAdd:       service.GroupAdd,
+		Links:          links,
+		OomScoreAdj:    int(service.OomScoreAdj),
 	}
 
 	return &containerConfig, &hostConfig, networkConfig, nil
@@ -403,7 +417,7 @@ func parseSecurityOpts(p *types.Project, securityOpts []string) ([]string, error
 			}
 		}
 		if con[0] == "seccomp" && con[1] != "unconfined" {
-			f, err := ioutil.ReadFile(p.RelativePath(con[1]))
+			f, err := os.ReadFile(p.RelativePath(con[1]))
 			if err != nil {
 				return securityOpts, errors.Errorf("opening seccomp profile (%s) failed: %v", con[1], err)
 			}
@@ -476,11 +490,25 @@ func getRestartPolicy(service types.ServiceConfig) container.RestartPolicy {
 			attempts = int(*policy.MaxAttempts)
 		}
 		restart = container.RestartPolicy{
-			Name:              policy.Condition,
+			Name:              mapRestartPolicyCondition(policy.Condition),
 			MaximumRetryCount: attempts,
 		}
 	}
 	return restart
+}
+
+func mapRestartPolicyCondition(condition string) string {
+	// map definitions of deploy.restart_policy to engine definitions
+	switch condition {
+	case "none", "no":
+		return "no"
+	case "on-failure", "unless-stopped":
+		return condition
+	case "any", "always":
+		return "always"
+	default:
+		return condition
+	}
 }
 
 func getDeployResources(s types.ServiceConfig) container.Resources {
@@ -566,6 +594,12 @@ func setReservations(reservations *types.Resource, resources *container.Resource
 	if reservations == nil {
 		return
 	}
+	// Cpu reservation is a swarm option and PIDs is only a limit
+	// So we only need to map memory reservation and devices
+	if reservations.MemoryBytes != 0 {
+		resources.MemoryReservation = int64(reservations.MemoryBytes)
+	}
+
 	for _, device := range reservations.Devices {
 		resources.DeviceRequests = append(resources.DeviceRequests, container.DeviceRequest{
 			Capabilities: [][]string{device.Capabilities},
@@ -584,8 +618,12 @@ func setLimits(limits *types.Resource, resources *container.Resources) {
 		resources.Memory = int64(limits.MemoryBytes)
 	}
 	if limits.NanoCPUs != "" {
-		i, _ := strconv.ParseInt(limits.NanoCPUs, 10, 64)
-		resources.NanoCPUs = i
+		if f, err := strconv.ParseFloat(limits.NanoCPUs, 64); err == nil {
+			resources.NanoCPUs = int64(f * 1e9)
+		}
+	}
+	if limits.PIds > 0 {
+		resources.PidsLimit = &limits.PIds
 	}
 }
 
@@ -665,7 +703,7 @@ func getVolumesFrom(project *types.Project, volumesFrom []string) ([]string, []s
 			continue
 		}
 		if spec[0] == "container" {
-			volumes = append(volumes, strings.Join(spec[1:], ":"))
+			volumes = append(volumes, vol)
 			continue
 		}
 		serviceName := spec[0]
@@ -697,7 +735,7 @@ func (s *composeService) buildContainerVolumes(ctx context.Context, p types.Proj
 	inherit *moby.Container) (map[string]struct{}, []string, []mount.Mount, error) {
 	var mounts = []mount.Mount{}
 
-	image := getImageName(service, p.Name)
+	image := api.GetImageNameOrDefault(service, p.Name)
 	imgInspect, _, err := s.apiClient().ImageInspectWithRaw(ctx, image)
 	if err != nil {
 		return nil, nil, nil, err
@@ -712,36 +750,31 @@ func (s *composeService) buildContainerVolumes(ctx context.Context, p types.Proj
 	binds := []string{}
 MOUNTS:
 	for _, m := range mountOptions {
+		if m.Type == mount.TypeNamedPipe {
+			mounts = append(mounts, m)
+			continue
+		}
 		volumeMounts[m.Target] = struct{}{}
-		// `Bind` API is used when host path need to be created if missing, `Mount` is preferred otherwise
-		if m.Type == mount.TypeBind || m.Type == mount.TypeNamedPipe {
+		if m.Type == mount.TypeBind {
+			// `Mount` is preferred but does not offer option to created host path if missing
+			// so `Bind` API is used here with raw volume string
+			// see https://github.com/moby/moby/issues/43483
 			for _, v := range service.Volumes {
-				if v.Target == m.Target && v.Bind != nil && v.Bind.CreateHostPath {
-					binds = append(binds, fmt.Sprintf("%s:%s:%s", m.Source, m.Target, getBindMode(v.Bind, m.ReadOnly)))
-					continue MOUNTS
+				if v.Target == m.Target {
+					switch {
+					case string(m.Type) != v.Type:
+						v.Source = m.Source
+						fallthrough
+					case v.Bind != nil && v.Bind.CreateHostPath:
+						binds = append(binds, v.String())
+						continue MOUNTS
+					}
 				}
 			}
 		}
 		mounts = append(mounts, m)
 	}
 	return volumeMounts, binds, mounts, nil
-}
-
-func getBindMode(bind *types.ServiceVolumeBind, readOnly bool) string {
-	mode := "rw"
-
-	if readOnly {
-		mode = "ro"
-	}
-
-	switch bind.SELinux {
-	case types.SELinuxShared:
-		mode += ",z"
-	case types.SELinuxPrivate:
-		mode += ",Z"
-	}
-
-	return mode
 }
 
 func buildContainerMountOptions(p types.Project, s types.ServiceConfig, img moby.ImageInspect, inherit *moby.Container) ([]mount.Mount, error) {
@@ -883,7 +916,11 @@ func buildContainerSecretMounts(p types.Project, s types.ServiceConfig) ([]mount
 			return nil, fmt.Errorf("unsupported external secret %s", definedSecret.Name)
 		}
 
-		mount, err := buildMount(p, types.ServiceVolumeConfig{
+		if definedSecret.Environment != "" {
+			continue
+		}
+
+		mnt, err := buildMount(p, types.ServiceVolumeConfig{
 			Type:     types.VolumeTypeBind,
 			Source:   definedSecret.File,
 			Target:   target,
@@ -892,7 +929,7 @@ func buildContainerSecretMounts(p types.Project, s types.ServiceConfig) ([]mount
 		if err != nil {
 			return nil, err
 		}
-		mounts[target] = mount
+		mounts[target] = mnt
 	}
 	values := make([]mount.Mount, 0, len(mounts))
 	for _, v := range mounts {
@@ -901,8 +938,8 @@ func buildContainerSecretMounts(p types.Project, s types.ServiceConfig) ([]mount
 	return values, nil
 }
 
-func isUnixAbs(path string) bool {
-	return strings.HasPrefix(path, "/")
+func isUnixAbs(p string) bool {
+	return strings.HasPrefix(p, "/")
 }
 
 func buildMount(project types.Project, volume types.ServiceVolumeConfig) (mount.Mount, error) {
@@ -926,9 +963,13 @@ func buildMount(project types.Project, volume types.ServiceVolumeConfig) (mount.
 		}
 	}
 
-	bind, vol, tmpfs := buildMountOptions(volume)
+	bind, vol, tmpfs := buildMountOptions(project, volume)
 
 	volume.Target = path.Clean(volume.Target)
+
+	if bind != nil {
+		volume.Type = types.VolumeTypeBind
+	}
 
 	return mount.Mount{
 		Type:          mount.Type(volume.Type),
@@ -942,14 +983,14 @@ func buildMount(project types.Project, volume types.ServiceVolumeConfig) (mount.
 	}, nil
 }
 
-func buildMountOptions(volume types.ServiceVolumeConfig) (*mount.BindOptions, *mount.VolumeOptions, *mount.TmpfsOptions) {
+func buildMountOptions(project types.Project, volume types.ServiceVolumeConfig) (*mount.BindOptions, *mount.VolumeOptions, *mount.TmpfsOptions) {
 	switch volume.Type {
 	case "bind":
 		if volume.Volume != nil {
 			logrus.Warnf("mount of type `bind` should not define `volume` option")
 		}
 		if volume.Tmpfs != nil {
-			logrus.Warnf("mount of type `tmpfs` should not define `tmpfs` option")
+			logrus.Warnf("mount of type `bind` should not define `tmpfs` option")
 		}
 		return buildBindOption(volume.Bind), nil, nil
 	case "volume":
@@ -958,6 +999,11 @@ func buildMountOptions(volume types.ServiceVolumeConfig) (*mount.BindOptions, *m
 		}
 		if volume.Tmpfs != nil {
 			logrus.Warnf("mount of type `volume` should not define `tmpfs` option")
+		}
+		if v, ok := project.Volumes[volume.Source]; ok && v.DriverOpts["o"] == types.VolumeTypeBind {
+			return buildBindOption(&types.ServiceVolumeBind{
+				CreateHostPath: true,
+			}), nil, nil
 		}
 		return nil, buildVolumeOptions(volume.Volume), nil
 	case "tmpfs":
@@ -999,7 +1045,7 @@ func buildTmpfsOptions(tmpfs *types.ServiceVolumeTmpfs) *mount.TmpfsOptions {
 	}
 	return &mount.TmpfsOptions{
 		SizeBytes: int64(tmpfs.Size),
-		// Mode:      , // FIXME missing from model ?
+		Mode:      os.FileMode(tmpfs.Mode),
 	}
 }
 
@@ -1012,86 +1058,90 @@ func getAliases(s types.ServiceConfig, c *types.ServiceNetworkConfig) []string {
 }
 
 func (s *composeService) ensureNetwork(ctx context.Context, n types.NetworkConfig) error {
-	_, err := s.apiClient().NetworkInspect(ctx, n.Name, moby.NetworkInspectOptions{})
+	// NetworkInspect will match on ID prefix, so NetworkList with a name
+	// filter is used to look for an exact match to prevent e.g. a network
+	// named `db` from getting erroneously matched to a network with an ID
+	// like `db9086999caf`
+	networks, err := s.apiClient().NetworkList(ctx, moby.NetworkListOptions{
+		Filters: filters.NewArgs(filters.Arg("name", n.Name)),
+	})
 	if err != nil {
-		if errdefs.IsNotFound(err) {
-			if n.External.External {
-				if n.Driver == "overlay" {
-					// Swarm nodes do not register overlay networks that were
-					// created on a different node unless they're in use.
-					// Here we assume `driver` is relevant for a network we don't manage
-					// which is a non-sense, but this is our legacy ¯\(ツ)/¯
-					// networkAttach will later fail anyway if network actually doesn't exists
-					return nil
-				}
-				return fmt.Errorf("network %s declared as external, but could not be found", n.Name)
-			}
-			var ipam *network.IPAM
-			if n.Ipam.Config != nil {
-				var config []network.IPAMConfig
-				for _, pool := range n.Ipam.Config {
-					config = append(config, network.IPAMConfig{
-						Subnet:     pool.Subnet,
-						IPRange:    pool.IPRange,
-						Gateway:    pool.Gateway,
-						AuxAddress: pool.AuxiliaryAddresses,
-					})
-				}
-				ipam = &network.IPAM{
-					Driver: n.Ipam.Driver,
-					Config: config,
-				}
-			}
-			createOpts := moby.NetworkCreate{
-				// TODO NameSpace Labels
-				Labels:     n.Labels,
-				Driver:     n.Driver,
-				Options:    n.DriverOpts,
-				Internal:   n.Internal,
-				Attachable: n.Attachable,
-				IPAM:       ipam,
-				EnableIPv6: n.EnableIPv6,
-			}
-
-			if n.Ipam.Driver != "" || len(n.Ipam.Config) > 0 {
-				createOpts.IPAM = &network.IPAM{}
-			}
-
-			if n.Ipam.Driver != "" {
-				createOpts.IPAM.Driver = n.Ipam.Driver
-			}
-
-			for _, ipamConfig := range n.Ipam.Config {
-				config := network.IPAMConfig{
-					Subnet: ipamConfig.Subnet,
-				}
-				createOpts.IPAM.Config = append(createOpts.IPAM.Config, config)
-			}
-			networkEventName := fmt.Sprintf("Network %s", n.Name)
-			w := progress.ContextWriter(ctx)
-			w.Event(progress.CreatingEvent(networkEventName))
-			if _, err := s.apiClient().NetworkCreate(ctx, n.Name, createOpts); err != nil {
-				w.Event(progress.ErrorEvent(networkEventName))
-				return errors.Wrapf(err, "failed to create network %s", n.Name)
-			}
-			w.Event(progress.CreatedEvent(networkEventName))
-			return nil
-		}
 		return err
 	}
-	return nil
-}
-
-func (s *composeService) removeNetwork(ctx context.Context, network string, w progress.Writer) error {
-	eventName := fmt.Sprintf("Network %s", network)
-	w.Event(progress.RemovingEvent(eventName))
-
-	if err := s.apiClient().NetworkRemove(ctx, network); err != nil {
-		w.Event(progress.ErrorEvent(eventName))
-		return errors.Wrapf(err, fmt.Sprintf("failed to remove network %s", network))
+	networkNotFound := true
+	for _, net := range networks {
+		if net.Name == n.Name {
+			networkNotFound = false
+			break
+		}
 	}
+	if networkNotFound {
+		if n.External.External {
+			if n.Driver == "overlay" {
+				// Swarm nodes do not register overlay networks that were
+				// created on a different node unless they're in use.
+				// Here we assume `driver` is relevant for a network we don't manage
+				// which is a non-sense, but this is our legacy ¯\(ツ)/¯
+				// networkAttach will later fail anyway if network actually doesn't exists
+				return nil
+			}
+			return fmt.Errorf("network %s declared as external, but could not be found", n.Name)
+		}
+		var ipam *network.IPAM
+		if n.Ipam.Config != nil {
+			var config []network.IPAMConfig
+			for _, pool := range n.Ipam.Config {
+				config = append(config, network.IPAMConfig{
+					Subnet:     pool.Subnet,
+					IPRange:    pool.IPRange,
+					Gateway:    pool.Gateway,
+					AuxAddress: pool.AuxiliaryAddresses,
+				})
+			}
+			ipam = &network.IPAM{
+				Driver: n.Ipam.Driver,
+				Config: config,
+			}
+		}
+		createOpts := moby.NetworkCreate{
+			CheckDuplicate: true,
+			// TODO NameSpace Labels
+			Labels:     n.Labels,
+			Driver:     n.Driver,
+			Options:    n.DriverOpts,
+			Internal:   n.Internal,
+			Attachable: n.Attachable,
+			IPAM:       ipam,
+			EnableIPv6: n.EnableIPv6,
+		}
 
-	w.Event(progress.RemovedEvent(eventName))
+		if n.Ipam.Driver != "" || len(n.Ipam.Config) > 0 {
+			createOpts.IPAM = &network.IPAM{}
+		}
+
+		if n.Ipam.Driver != "" {
+			createOpts.IPAM.Driver = n.Ipam.Driver
+		}
+
+		for _, ipamConfig := range n.Ipam.Config {
+			config := network.IPAMConfig{
+				Subnet:     ipamConfig.Subnet,
+				IPRange:    ipamConfig.IPRange,
+				Gateway:    ipamConfig.Gateway,
+				AuxAddress: ipamConfig.AuxiliaryAddresses,
+			}
+			createOpts.IPAM.Config = append(createOpts.IPAM.Config, config)
+		}
+		networkEventName := fmt.Sprintf("Network %s", n.Name)
+		w := progress.ContextWriter(ctx)
+		w.Event(progress.CreatingEvent(networkEventName))
+		if _, err := s.apiClient().NetworkCreate(ctx, n.Name, createOpts); err != nil {
+			w.Event(progress.ErrorEvent(networkEventName))
+			return errors.Wrapf(err, "failed to create network %s", n.Name)
+		}
+		w.Event(progress.CreatedEvent(networkEventName))
+		return nil
+	}
 	return nil
 }
 
@@ -1127,7 +1177,7 @@ func (s *composeService) createVolume(ctx context.Context, volume types.VolumeCo
 	eventName := fmt.Sprintf("Volume %q", volume.Name)
 	w := progress.ContextWriter(ctx)
 	w.Event(progress.CreatingEvent(eventName))
-	_, err := s.apiClient().VolumeCreate(ctx, volume_api.VolumeCreateBody{
+	_, err := s.apiClient().VolumeCreate(ctx, volume_api.CreateOptions{
 		Labels:     volume.Labels,
 		Name:       volume.Name,
 		Driver:     volume.Driver,

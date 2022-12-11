@@ -27,6 +27,8 @@ import (
 
 	"github.com/compose-spec/compose-go/cli"
 	"github.com/compose-spec/compose-go/types"
+	composegoutils "github.com/compose-spec/compose-go/utils"
+	"github.com/docker/buildx/util/logutil"
 	dockercli "github.com/docker/cli/cli"
 	"github.com/docker/cli/cli-plugins/manager"
 	"github.com/docker/cli/cli/command"
@@ -135,6 +137,24 @@ func (o *projectOptions) addProjectFlags(f *pflag.FlagSet) {
 	_ = f.MarkHidden("workdir")
 }
 
+func (o *projectOptions) projectOrName(services ...string) (*types.Project, string, error) {
+	name := o.ProjectName
+	var project *types.Project
+	if o.ProjectName == "" {
+		p, err := o.toProject(services)
+		if err != nil {
+			envProjectName := os.Getenv("COMPOSE_PROJECT_NAME")
+			if envProjectName != "" {
+				return nil, envProjectName, nil
+			}
+			return nil, "", err
+		}
+		project = p
+		name = p.Name
+	}
+	return project, name, nil
+}
+
 func (o *projectOptions) toProjectName() (string, error) {
 	if o.ProjectName != "" {
 		return o.ProjectName, nil
@@ -158,18 +178,21 @@ func (o *projectOptions) toProject(services []string, po ...cli.ProjectOptionsFn
 		return nil, compose.WrapComposeError(err)
 	}
 
+	if o.Compatibility || utils.StringToBool(options.Environment["COMPOSE_COMPATIBILITY"]) {
+		api.Separator = "_"
+	}
+
 	project, err := cli.ProjectFromOptions(options)
 	if err != nil {
 		return nil, compose.WrapComposeError(err)
 	}
 
-	if o.Compatibility || utils.StringToBool(project.Environment["COMPOSE_COMPATIBILITY"]) {
-		compose.Separator = "_"
-	}
-
 	ef := o.EnvFile
 	if ef != "" && !filepath.IsAbs(ef) {
-		ef = filepath.Join(project.WorkingDir, o.EnvFile)
+		ef, err = filepath.Abs(ef)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for i, s := range project.Services {
 		s.CustomLabels = map[string]string{
@@ -186,16 +209,16 @@ func (o *projectOptions) toProject(services []string, po ...cli.ProjectOptionsFn
 		project.Services[i] = s
 	}
 
+	if profiles, ok := options.Environment["COMPOSE_PROFILES"]; ok && len(o.Profiles) == 0 {
+		o.Profiles = append(o.Profiles, strings.Split(profiles, ",")...)
+	}
+
 	if len(services) > 0 {
 		s, err := project.GetServices(services...)
 		if err != nil {
 			return nil, err
 		}
 		o.Profiles = append(o.Profiles, s.GetProfiles()...)
-	}
-
-	if profiles, ok := options.Environment["COMPOSE_PROFILES"]; ok {
-		o.Profiles = append(o.Profiles, strings.Split(profiles, ",")...)
 	}
 
 	project.ApplyProfiles(o.Profiles)
@@ -210,9 +233,9 @@ func (o *projectOptions) toProjectOptions(po ...cli.ProjectOptionsFn) (*cli.Proj
 	return cli.NewProjectOptions(o.ConfigPaths,
 		append(po,
 			cli.WithWorkingDirectory(o.ProjectDir),
+			cli.WithOsEnv,
 			cli.WithEnvFile(o.EnvFile),
 			cli.WithDotEnv,
-			cli.WithOsEnv,
 			cli.WithConfigFileEnv,
 			cli.WithDefaultConfigPath,
 			cli.WithName(o.ProjectName))...)
@@ -228,18 +251,29 @@ func RunningAsStandalone() bool {
 
 // RootCommand returns the compose command with its child commands
 func RootCommand(dockerCli command.Cli, backend api.Service) *cobra.Command {
+	// filter out useless commandConn.CloseWrite warning message that can occur
+	// when using a remote context that is unreachable: "commandConn.CloseWrite: commandconn: failed to wait: signal: killed"
+	// https://github.com/docker/cli/blob/e1f24d3c93df6752d3c27c8d61d18260f141310c/cli/connhelper/commandconn/commandconn.go#L203-L215
+	logrus.AddHook(logutil.NewFilter([]logrus.Level{
+		logrus.WarnLevel,
+	},
+		"commandConn.CloseWrite:",
+		"commandConn.CloseRead:",
+	))
+
 	opts := projectOptions{}
 	var (
-		ansi    string
-		noAnsi  bool
-		verbose bool
-		version bool
+		ansi     string
+		noAnsi   bool
+		verbose  bool
+		version  bool
+		parallel int
 	)
-	command := &cobra.Command{
+	c := &cobra.Command{
 		Short:            "Docker Compose",
 		Use:              PluginName,
 		TraverseChildren: true,
-		// By default (no Run/RunE in parent command) for typos in subcommands, cobra displays the help of parent command but exit(0) !
+		// By default (no Run/RunE in parent c) for typos in subcommands, cobra displays the help of parent c but exit(0) !
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return cmd.Help()
@@ -254,6 +288,10 @@ func RootCommand(dockerCli command.Cli, backend api.Service) *cobra.Command {
 			}
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			err := setEnvWithDotEnv(&opts)
+			if err != nil {
+				return err
+			}
 			parent := cmd.Root()
 			if parent != nil {
 				parentPrerun := parent.PersistentPreRunE
@@ -269,7 +307,7 @@ func RootCommand(dockerCli command.Cli, backend api.Service) *cobra.Command {
 					return errors.New(`cannot specify DEPRECATED "--no-ansi" and "--ansi". Please use only "--ansi"`)
 				}
 				ansi = "never"
-				fmt.Fprint(os.Stderr, aec.Apply("option '--no-ansi' is DEPRECATED ! Please use '--ansi' instead.\n", aec.RedF))
+				fmt.Fprint(os.Stderr, "option '--no-ansi' is DEPRECATED ! Please use '--ansi' instead.\n")
 			}
 			if verbose {
 				logrus.SetLevel(logrus.TraceLevel)
@@ -288,11 +326,14 @@ func RootCommand(dockerCli command.Cli, backend api.Service) *cobra.Command {
 				opts.ProjectDir = opts.WorkDir
 				fmt.Fprint(os.Stderr, aec.Apply("option '--workdir' is DEPRECATED at root level! Please use '--project-directory' instead.\n", aec.RedF))
 			}
+			if parallel > 0 {
+				backend.MaxConcurrency(parallel)
+			}
 			return nil
 		},
 	}
 
-	command.AddCommand(
+	c.AddCommand(
 		upCommand(&opts, backend),
 		downCommand(&opts, backend),
 		startCommand(&opts, backend),
@@ -319,14 +360,50 @@ func RootCommand(dockerCli command.Cli, backend api.Service) *cobra.Command {
 		createCommand(&opts, backend),
 		copyCommand(&opts, backend),
 	)
-	command.Flags().SetInterspersed(false)
-	opts.addProjectFlags(command.Flags())
-	command.Flags().StringVar(&ansi, "ansi", "auto", `Control when to print ANSI control characters ("never"|"always"|"auto")`)
-	command.Flags().BoolVarP(&version, "version", "v", false, "Show the Docker Compose version information")
-	command.Flags().MarkHidden("version") //nolint:errcheck
-	command.Flags().BoolVar(&noAnsi, "no-ansi", false, `Do not print ANSI control characters (DEPRECATED)`)
-	command.Flags().MarkHidden("no-ansi") //nolint:errcheck
-	command.Flags().BoolVar(&verbose, "verbose", false, "Show more output")
-	command.Flags().MarkHidden("verbose") //nolint:errcheck
-	return command
+	c.Flags().SetInterspersed(false)
+	opts.addProjectFlags(c.Flags())
+	c.RegisterFlagCompletionFunc( //nolint:errcheck
+		"project-name",
+		completeProjectNames(backend),
+	)
+	c.RegisterFlagCompletionFunc( //nolint:errcheck
+		"file",
+		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt
+		},
+	)
+
+	c.Flags().StringVar(&ansi, "ansi", "auto", `Control when to print ANSI control characters ("never"|"always"|"auto")`)
+	c.Flags().IntVar(&parallel, "parallel", -1, `Control max parallelism, -1 for unlimited`)
+	c.Flags().BoolVarP(&version, "version", "v", false, "Show the Docker Compose version information")
+	c.Flags().MarkHidden("version") //nolint:errcheck
+	c.Flags().BoolVar(&noAnsi, "no-ansi", false, `Do not print ANSI control characters (DEPRECATED)`)
+	c.Flags().MarkHidden("no-ansi") //nolint:errcheck
+	c.Flags().BoolVar(&verbose, "verbose", false, "Show more output")
+	c.Flags().MarkHidden("verbose") //nolint:errcheck
+	return c
+}
+
+func setEnvWithDotEnv(prjOpts *projectOptions) error {
+	options, err := prjOpts.toProjectOptions()
+	if err != nil {
+		return compose.WrapComposeError(err)
+	}
+	workingDir, err := options.GetWorkingDir()
+	if err != nil {
+		return err
+	}
+
+	envFromFile, err := cli.GetEnvFromFile(composegoutils.GetAsEqualsMap(os.Environ()), workingDir, options.EnvFile)
+	if err != nil {
+		return err
+	}
+	for k, v := range envFromFile {
+		if _, ok := os.LookupEnv(k); !ok { // Precedence to OS Env
+			if err := os.Setenv(k, v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

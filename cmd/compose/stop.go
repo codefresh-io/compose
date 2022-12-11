@@ -36,7 +36,7 @@ func stopCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		projectOptions: p,
 	}
 	cmd := &cobra.Command{
-		Use:   "stop [SERVICE...]",
+		Use:   "stop [OPTIONS] [SERVICE...]",
 		Short: "Stop services",
 		PreRun: func(cmd *cobra.Command, args []string) {
 			opts.timeChanged = cmd.Flags().Changed("timeout")
@@ -44,7 +44,7 @@ func stopCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		RunE: Adapt(func(ctx context.Context, args []string) error {
 			return runStop(ctx, backend, opts, args)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 	flags := cmd.Flags()
 	flags.IntVarP(&opts.timeout, "timeout", "t", 10, "Specify a shutdown timeout in seconds")
@@ -53,7 +53,7 @@ func stopCommand(p *projectOptions, backend api.Service) *cobra.Command {
 }
 
 func runStop(ctx context.Context, backend api.Service, opts stopOptions, services []string) error {
-	projectName, err := opts.toProjectName()
+	project, name, err := opts.projectOrName(services...)
 	if err != nil {
 		return err
 	}
@@ -63,8 +63,9 @@ func runStop(ctx context.Context, backend api.Service, opts stopOptions, service
 		timeoutValue := time.Duration(opts.timeout) * time.Second
 		timeout = &timeoutValue
 	}
-	return backend.Stop(ctx, projectName, api.StopOptions{
+	return backend.Stop(ctx, name, api.StopOptions{
 		Timeout:  timeout,
 		Services: services,
+		Project:  project,
 	})
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/compose-spec/compose-go/loader"
 	"github.com/compose-spec/compose-go/types"
 	buildx "github.com/docker/buildx/util/progress"
+	"github.com/docker/compose/v2/pkg/progress"
 	"github.com/docker/compose/v2/pkg/utils"
 	"github.com/spf13/cobra"
 
@@ -77,7 +78,7 @@ func buildCommand(p *projectOptions, backend api.Service) *cobra.Command {
 		projectOptions: p,
 	}
 	cmd := &cobra.Command{
-		Use:   "build [SERVICE...]",
+		Use:   "build [OPTIONS] [SERVICE...]",
 		Short: "Build or rebuild services",
 		PreRunE: Adapt(func(ctx context.Context, args []string) error {
 			if opts.memory != "" {
@@ -100,9 +101,12 @@ func buildCommand(p *projectOptions, backend api.Service) *cobra.Command {
 			if cmd.Flags().Changed("ssh") && opts.ssh == "" {
 				opts.ssh = "default"
 			}
+			if progress.Mode == progress.ModePlain && !cmd.Flags().Changed("progress") {
+				opts.progress = buildx.PrinterModePlain
+			}
 			return runBuild(ctx, backend, opts, args)
 		}),
-		ValidArgsFunction: serviceCompletion(p),
+		ValidArgsFunction: completeServiceNames(p),
 	}
 	cmd.Flags().BoolVarP(&opts.quiet, "quiet", "q", false, "Don't print anything to STDOUT")
 	cmd.Flags().BoolVar(&opts.pull, "pull", false, "Always attempt to pull a newer version of the image.")

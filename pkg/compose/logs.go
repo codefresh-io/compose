@@ -19,20 +19,42 @@ package compose
 import (
 	"context"
 	"io"
+	"strings"
 
-	"github.com/docker/compose/v2/pkg/api"
-	"github.com/docker/compose/v2/pkg/utils"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/pkg/stdcopy"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/docker/compose/v2/pkg/api"
+	"github.com/docker/compose/v2/pkg/utils"
 )
 
-func (s *composeService) Logs(ctx context.Context, projectName string, consumer api.LogConsumer, options api.LogOptions) error {
+func (s *composeService) Logs(
+	ctx context.Context,
+	projectName string,
+	consumer api.LogConsumer,
+	options api.LogOptions,
+) error {
+	projectName = strings.ToLower(projectName)
+
 	containers, err := s.getContainers(ctx, projectName, oneOffExclude, true, options.Services...)
 	if err != nil {
 		return err
 	}
 
+	project := options.Project
+	if project == nil {
+		project, err = s.getProjectWithResources(ctx, containers, projectName)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(options.Services) == 0 {
+		options.Services = project.ServiceNames()
+	}
+
+	containers = containers.filter(isService(options.Services...))
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, c := range containers {
 		c := c
@@ -43,19 +65,16 @@ func (s *composeService) Logs(ctx context.Context, projectName string, consumer 
 
 	if options.Follow {
 		printer := newLogPrinter(consumer)
-		eg.Go(func() error {
-			for _, c := range containers {
-				printer.HandleEvent(api.ContainerEvent{
-					Type:      api.ContainerEventAttach,
-					Container: getContainerNameWithoutProject(c),
-					Service:   c.Labels[api.ServiceLabel],
-				})
-			}
-			return nil
-		})
+		for _, c := range containers {
+			printer.HandleEvent(api.ContainerEvent{
+				Type:      api.ContainerEventAttach,
+				Container: getContainerNameWithoutProject(c),
+				Service:   c.Labels[api.ServiceLabel],
+			})
+		}
 
 		eg.Go(func() error {
-			return s.watchContainers(ctx, projectName, options.Services, printer.HandleEvent, containers, func(c types.Container) error {
+			return s.watchContainers(ctx, projectName, options.Services, nil, printer.HandleEvent, containers, func(c types.Container) error {
 				printer.HandleEvent(api.ContainerEvent{
 					Type:      api.ContainerEventAttach,
 					Container: getContainerNameWithoutProject(c),
@@ -93,7 +112,7 @@ func (s *composeService) logContainers(ctx context.Context, consumer api.LogCons
 	if err != nil {
 		return err
 	}
-	defer r.Close() // nolint errcheck
+	defer r.Close() //nolint:errcheck
 
 	name := getContainerNameWithoutProject(c)
 	w := utils.GetWriter(func(line string) {

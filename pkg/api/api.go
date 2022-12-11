@@ -29,12 +29,12 @@ import (
 type Service interface {
 	// Build executes the equivalent to a `compose build`
 	Build(ctx context.Context, project *types.Project, options BuildOptions) error
-	// Push executes the equivalent ot a `compose push`
+	// Push executes the equivalent to a `compose push`
 	Push(ctx context.Context, project *types.Project, options PushOptions) error
 	// Pull executes the equivalent of a `compose pull`
-	Pull(ctx context.Context, project *types.Project, opts PullOptions) error
+	Pull(ctx context.Context, project *types.Project, options PullOptions) error
 	// Create executes the equivalent to a `compose create`
-	Create(ctx context.Context, project *types.Project, opts CreateOptions) error
+	Create(ctx context.Context, project *types.Project, options CreateOptions) error
 	// Start executes the equivalent to a `compose start`
 	Start(ctx context.Context, projectName string, options StartOptions) error
 	// Restart restarts containers
@@ -54,27 +54,29 @@ type Service interface {
 	// Convert translate compose model into backend's native format
 	Convert(ctx context.Context, project *types.Project, options ConvertOptions) ([]byte, error)
 	// Kill executes the equivalent to a `compose kill`
-	Kill(ctx context.Context, project string, options KillOptions) error
+	Kill(ctx context.Context, projectName string, options KillOptions) error
 	// RunOneOffContainer creates a service oneoff container and starts its dependencies
 	RunOneOffContainer(ctx context.Context, project *types.Project, opts RunOptions) (int, error)
 	// Remove executes the equivalent to a `compose rm`
-	Remove(ctx context.Context, project string, options RemoveOptions) error
+	Remove(ctx context.Context, projectName string, options RemoveOptions) error
 	// Exec executes a command in a running service container
-	Exec(ctx context.Context, project string, opts RunOptions) (int, error)
+	Exec(ctx context.Context, projectName string, options RunOptions) (int, error)
 	// Copy copies a file/folder between a service container and the local filesystem
-	Copy(ctx context.Context, project string, options CopyOptions) error
+	Copy(ctx context.Context, projectName string, options CopyOptions) error
 	// Pause executes the equivalent to a `compose pause`
-	Pause(ctx context.Context, project string, options PauseOptions) error
+	Pause(ctx context.Context, projectName string, options PauseOptions) error
 	// UnPause executes the equivalent to a `compose unpause`
-	UnPause(ctx context.Context, project string, options PauseOptions) error
+	UnPause(ctx context.Context, projectName string, options PauseOptions) error
 	// Top executes the equivalent to a `compose top`
 	Top(ctx context.Context, projectName string, services []string) ([]ContainerProcSummary, error)
 	// Events executes the equivalent to a `compose events`
-	Events(ctx context.Context, project string, options EventsOptions) error
+	Events(ctx context.Context, projectName string, options EventsOptions) error
 	// Port executes the equivalent to a `compose port`
-	Port(ctx context.Context, project string, service string, port int, options PortOptions) (string, int, error)
+	Port(ctx context.Context, projectName string, service string, port uint16, options PortOptions) (string, int, error)
 	// Images executes the equivalent of a `compose images`
 	Images(ctx context.Context, projectName string, options ImagesOptions) ([]ImageSummary, error)
+	// MaxConcurrency defines upper limit for concurrent operations against engine API
+	MaxConcurrency(parallel int)
 }
 
 // BuildOptions group options of the Build API
@@ -117,7 +119,7 @@ type CreateOptions struct {
 
 // StartOptions group options of the Start API
 type StartOptions struct {
-	// Project is the compose project used to define this app. Might be nil if user ran `start` just with project name
+	// Project is the compose project used to define this app. Might be nil if user ran command just with project name
 	Project *types.Project
 	// Attach to container and forward logs if not nil
 	Attach LogConsumer
@@ -129,10 +131,14 @@ type StartOptions struct {
 	ExitCodeFrom string
 	// Wait won't return until containers reached the running|healthy state
 	Wait bool
+	// Services passed in the command line to be started
+	Services []string
 }
 
 // RestartOptions group options of the Restart API
 type RestartOptions struct {
+	// Project is the compose project used to define this app. Might be nil if user ran command just with project name
+	Project *types.Project
 	// Timeout override container restart timeout
 	Timeout *time.Duration
 	// Services passed in the command line to be restarted
@@ -141,6 +147,8 @@ type RestartOptions struct {
 
 // StopOptions group options of the Stop API
 type StopOptions struct {
+	// Project is the compose project used to define this app. Might be nil if user ran command just with project name
+	Project *types.Project
 	// Timeout override container stop timeout
 	Timeout *time.Duration
 	// Services passed in the command line to be stopped
@@ -173,10 +181,13 @@ type ConvertOptions struct {
 	Format string
 	// Output defines the path to save the application model
 	Output string
+	// Resolve image reference to digests
+	ResolveImageDigests bool
 }
 
 // PushOptions group options of the Push API
 type PushOptions struct {
+	Quiet          bool
 	IgnoreFailures bool
 }
 
@@ -193,6 +204,10 @@ type ImagesOptions struct {
 
 // KillOptions group options of the Kill API
 type KillOptions struct {
+	// RemoveOrphans will cleanup containers that are not declared on the compose model but own the same labels
+	RemoveOrphans bool
+	// Project is the compose project used to define this app. Might be nil if user ran command just with project name
+	Project *types.Project
 	// Services passed in the command line to be killed
 	Services []string
 	// Signal to send to containers
@@ -201,6 +216,8 @@ type KillOptions struct {
 
 // RemoveOptions group options of the Remove API
 type RemoveOptions struct {
+	// Project is the compose project used to define this app. Might be nil if user ran command just with project name
+	Project *types.Project
 	// DryRun just list removable resources
 	DryRun bool
 	// Volumes remove anonymous volumes
@@ -213,6 +230,8 @@ type RemoveOptions struct {
 
 // RunOptions group options of the Run API
 type RunOptions struct {
+	// Project is the compose project used to define this app. Might be nil if user ran command just with project name
+	Project           *types.Project
 	Name              string
 	Service           string
 	Command           []string
@@ -272,6 +291,7 @@ type ListOptions struct {
 
 // PsOptions group options of the Ps API
 type PsOptions struct {
+	Project  *types.Project
 	All      bool
 	Services []string
 }
@@ -365,6 +385,7 @@ type ServiceStatus struct {
 
 // LogOptions defines optional parameters for the `Log` API
 type LogOptions struct {
+	Project    *types.Project
 	Services   []string
 	Tail       string
 	Since      string
@@ -377,6 +398,8 @@ type LogOptions struct {
 type PauseOptions struct {
 	// Services passed in the command line to be started
 	Services []string
+	// Project is the compose project used to define this app. Might be nil if user ran command just with project name
+	Project *types.Project
 }
 
 const (
@@ -414,7 +437,7 @@ type Stack struct {
 
 // LogConsumer is a callback to process log messages from services
 type LogConsumer interface {
-	Log(service, container, message string)
+	Log(containerName, service, message string)
 	Status(container, msg string)
 	Register(container string)
 }
@@ -424,7 +447,11 @@ type ContainerEventListener func(event ContainerEvent)
 
 // ContainerEvent notify an event has been collected on source container implementing Service
 type ContainerEvent struct {
-	Type      int
+	Type int
+	// Container is the name of the container _without the project prefix_.
+	//
+	// This is only suitable for display purposes within Compose, as it's
+	// not guaranteed to be unique across services.
 	Container string
 	Service   string
 	Line      string
@@ -445,3 +472,15 @@ const (
 	// UserCancel user cancelled compose up, we are stopping containers
 	UserCancel
 )
+
+// Separator is used for naming components
+var Separator = "-"
+
+// GetImageNameOrDefault computes the default image name for a service, used to tag built images
+func GetImageNameOrDefault(service types.ServiceConfig, projectName string) string {
+	imageName := service.Image
+	if imageName == "" {
+		imageName = projectName + Separator + service.Name
+	}
+	return imageName
+}
