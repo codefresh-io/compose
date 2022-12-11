@@ -2,22 +2,14 @@ ARG GO_VERSION=1.17-alpine
 ARG GOLANGCI_LINT_VERSION=v1.40.1-alpine
 ARG PROTOC_GEN_GO_VERSION=v1.4.3
 
-ARG BUILD_TAGS="e2e,kube"
-ARG DOCS_FORMATS="md,yaml"
-ARG LICENSE_FILES=".*\(Dockerfile\|Makefile\|\.go\|\.hcl\|\.sh\)"
-
 FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION} AS base
-RUN apk add --no-cache \
-      docker \
-      file \
-      git \
-      make \
-      protoc \
-      protobuf-dev
-WORKDIR /src
-ENV CGO_ENABLED=0
-
-FROM base AS build-base
+WORKDIR /compose-cli
+RUN apk add --no-cache -vv \
+    git \
+    docker \
+    make \
+    protoc \
+    protobuf-dev
 COPY go.* .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
@@ -27,13 +19,16 @@ FROM base AS make-compose-plugin
 ENV CGO_ENABLED=0
 ARG TARGETOS
 ARG TARGETARCH
-ARG TARGETVARIANT
-RUN --mount=from=binary \
-    mkdir -p /out && \
-    # TODO: should just use standard arch
-    TARGETARCH=$([ "$TARGETARCH" = "amd64" ] && echo "x86_64" || echo "$TARGETARCH"); \
-    TARGETARCH=$([ "$TARGETARCH" = "arm64" ] && echo "aarch64" || echo "$TARGETARCH"); \
-    cp docker-compose* "/out/docker-compose-${TARGETOS}-${TARGETARCH}${TARGETVARIANT}$(ls docker-compose* | sed -e 's/^docker-compose//')"
+ARG BUILD_TAGS
+ARG GIT_TAG
+RUN --mount=target=. \
+    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=${TARGETOS} \
+    GOARCH=${TARGETARCH} \
+    BUILD_TAGS=${BUILD_TAGS} \
+    GIT_TAG=${GIT_TAG} \
+    make COMPOSE_BINARY=/out/docker-compose -f builder.Makefile compose-plugin
 
 FROM debian:bullseye-slim AS compose-plugin
 WORKDIR /root
