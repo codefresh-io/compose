@@ -16,6 +16,7 @@
 #   limitations under the License.
 
 ARG GO_VERSION=1.19.4-alpine
+ARG COMPOSE_UPSTREAM_VERSION=v2.15.1
 
 FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION} AS base
 WORKDIR /compose-cli
@@ -35,14 +36,13 @@ ENV CGO_ENABLED=0
 ARG TARGETOS
 ARG TARGETARCH
 ARG BUILD_TAGS
-ARG GIT_TAG
 RUN --mount=target=. \
   --mount=type=cache,target=/go/pkg/mod \
   --mount=type=cache,target=/root/.cache/go-build \
   GOOS=${TARGETOS} \
   GOARCH=${TARGETARCH} \
   BUILD_TAGS=${BUILD_TAGS} \
-  GIT_TAG=${GIT_TAG} \
+  GIT_TAG=${COMPOSE_UPSTREAM_VERSION} \
   make COMPOSE_BINARY=/out/docker-compose -f builder.Makefile compose-plugin
 
 FROM debian:bullseye-slim AS compose-plugin
