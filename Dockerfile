@@ -15,10 +15,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-ARG GO_VERSION=1.19.4-alpine
-ARG XX_VERSION=1.1.2
-ARG GOLANGCI_LINT_VERSION=v1.49.0
-ARG ADDLICENSE_VERSION=v1.0.0
+ARG GO_VERSION=1.21.0-alpine3.18
 
 FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION} AS base
 WORKDIR /compose-cli
@@ -62,7 +59,6 @@ WORKDIR /home/compose
 
 RUN chown -R compose:compose /home/compose && \
   chmod 755 /home/compose
-
 
 USER compose:compose
 
