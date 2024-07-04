@@ -14,7 +14,8 @@ RUN addgroup --gid 3000 compose && \
   adduser --uid 3000 --gecos "" --disabled-password \
   --ingroup compose \
   --home /home/compose \
-  --shell /bin/bash compose
+  --shell /bin/bash compose && \
+    apt -U upgrade
 
 WORKDIR /home/compose
 
