@@ -4,12 +4,10 @@ ARG COMPOSE_VERSION=v2.28.1
 
 FROM docker/compose-bin:${COMPOSE_VERSION} AS compose
 
-FROM debian:bullseye-slim AS compose-plugin
-
-
+FROM alpine:3.20 AS compose-plugin
 
 COPY --from=compose /docker-compose /usr/local/bin/docker-compose
-ENV COMPOSE_COMPATIBILITY true
+ENV COMPOSE_COMPATIBILITY=true
 
 # add user
 RUN addgroup --gid 3000 compose && \
