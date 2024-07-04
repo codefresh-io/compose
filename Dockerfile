@@ -9,7 +9,7 @@ FROM alpine:3.20 AS compose-plugin
 COPY --from=compose /docker-compose /usr/local/bin/docker-compose
 ENV COMPOSE_COMPATIBILITY=true
 
-RUN apt -U upgrade
+RUN apk -U upgrade
 # add user
 RUN addgroup --gid 3000 compose && \
   adduser --uid 3000 --gecos "" --disabled-password \
