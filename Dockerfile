@@ -6,7 +6,7 @@ RUN groupadd --gid 3000 compose \
     --home /home/compose \
     --shell /bin/bash \
     compose  
-COPY --from=docker/compose-bin:v2.40.3 --chown=compose:compose /docker-compose /usr/local/bin/docker-compose
+COPY --from=docker/compose-bin:v5.0.0 --chown=compose:compose /docker-compose /usr/local/bin/docker-compose
 
 ENV COMPOSE_COMPATIBILITY=true
 USER compose:compose
