@@ -1,4 +1,4 @@
-FROM debian:trixie-20251117-slim AS compose-plugin
+FROM debian:trixie-20251208-slim AS compose-plugin
 WORKDIR /home/compose
 RUN groupadd --gid 3000 compose \
   && useradd --uid 3000 \
