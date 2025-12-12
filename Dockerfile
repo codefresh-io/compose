@@ -1,3 +1,4 @@
+# CI relies on this ARG. Don't remove or rename it
 ARG COMPOSE_VERSION=v2.40.3
 
 FROM debian:trixie-20251208-slim AS compose-plugin
