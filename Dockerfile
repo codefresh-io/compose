@@ -1,3 +1,6 @@
+ARG COMPOSE_VERSION=v2.40.3
+# ↑ CI relies on this ARG. Don't remove or rename it ↑
+
 FROM debian:trixie-20251208-slim AS compose-plugin
 WORKDIR /home/compose
 RUN groupadd --gid 3000 compose \
@@ -6,7 +9,7 @@ RUN groupadd --gid 3000 compose \
     --home /home/compose \
     --shell /bin/bash \
     compose  
-COPY --from=docker/compose-bin:v2.40.3 --chown=compose:compose /docker-compose /usr/local/bin/docker-compose
+COPY --from=docker/compose-bin:${COMPOSE_VERSION} --chown=compose:compose /docker-compose /usr/local/bin/docker-compose
 
 ENV COMPOSE_COMPATIBILITY=true
 USER compose:compose
