@@ -1,5 +1,5 @@
 # CI relies on this ARG. Don't remove or rename it
-ARG COMPOSE_VERSION=v2.40.3
+ARG COMPOSE_VERSION=v5.0.1
 FROM docker/compose-bin:${COMPOSE_VERSION} AS compose
 
 FROM debian:trixie-20251208-slim AS compose-plugin
