@@ -1,17 +1,13 @@
 # CI relies on this ARG. Don't remove or rename it
 ARG COMPOSE_VERSION=v5.0.1
-FROM docker/compose-bin:${COMPOSE_VERSION} AS compose
+FROM docker/compose-bin:${COMPOSE_VERSION} AS compose-bin
 
-FROM debian:trixie-20251208-slim AS compose-plugin
+
+# DHI source: https://hub.docker.com/repository/docker/octopusdeploy/dhi-debian-base
+FROM octopusdeploy/dhi-debian-base:trixie-debian13 AS compose-plugin
 WORKDIR /home/compose
-RUN groupadd --gid 3000 compose \
-  && useradd --uid 3000 \
-    --gid 3000 \
-    --home /home/compose \
-    --shell /bin/bash \
-    compose  
-COPY --from=compose --chown=compose:compose /docker-compose /usr/local/bin/docker-compose
+COPY --chown=nonroot:nonroot --chmod=755 --from=compose-bin /docker-compose /usr/local/bin/docker-compose
 
 ENV COMPOSE_COMPATIBILITY=true
-USER compose:compose
+USER nonroot:nonroot
 ENTRYPOINT [ "docker-compose" ]
