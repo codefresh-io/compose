@@ -1,0 +1,20 @@
+.github/release-drafter.yaml
+  h_edacc0155fac2e 1-2
+service.yaml
+  h_edacc0155fac2e 1
+Dockerfile
+  h_edacc0155fac2e 1
+.github/dependabot.yml
+  h_edacc0155fac2e 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "643777126a846d197bbd9477919bc5de8f5ebb15",
+  "prompts": {},
+  "humans": {
+    "h_edacc0155fac2e": {
+      "author": "Zhenya Tikhonov <masontikhonov@gmail.com>"
+    }
+  }
+}
