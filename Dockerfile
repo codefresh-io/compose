@@ -1,4 +1,4 @@
-FROM docker/compose-bin:v5.3.1@sha256:38fd4a3c7458b931d339b1eb657df0bef790a39bcaeb93ff9f70f59849b905c5 AS compose-bin
+FROM docker/compose-bin:v5.5.0@sha256:962d5ea7017e5ef425bfa47e492efa2c27d0492e8af58c497011e73b2ce98ee0 AS compose-bin
 
 
 # DHI source: https://hub.docker.com/repository/docker/octopusdeploy/dhi-debian-base
