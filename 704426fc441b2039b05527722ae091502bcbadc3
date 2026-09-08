@@ -1,0 +1,16 @@
+Dockerfile
+  h_51acfbafc7319b 1
+service.yaml
+  h_51acfbafc7319b 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "704426fc441b2039b05527722ae091502bcbadc3",
+  "prompts": {},
+  "humans": {
+    "h_51acfbafc7319b": {
+      "author": "vitaliichyrka <vitalii.chyrka@codefresh.io>"
+    }
+  }
+}
