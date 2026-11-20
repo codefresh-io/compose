@@ -32,6 +32,6 @@ updates:
       - dependency-name: "octopusdeploy/dhi-debian-base"
         update-types:
           - version-update:semver-major
-      - dependency-name: "docker/compose-bin"
+      - dependency-name: "octopusdeploy/dhi-docker"
         update-types:
           - version-update:semver-major
