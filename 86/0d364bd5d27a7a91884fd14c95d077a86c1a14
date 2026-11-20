@@ -1,0 +1,29 @@
+Dockerfile
+  s_fe6c18fdeaf4cf::t_6e41084a8b92af 1
+  h_edacc0155fac2e 2,8,11
+service.yaml
+  h_edacc0155fac2e 1
+.github/dependabot.yml
+  s_fe6c18fdeaf4cf::t_6e41084a8b92af 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "860d364bd5d27a7a91884fd14c95d077a86c1a14",
+  "prompts": {},
+  "humans": {
+    "h_edacc0155fac2e": {
+      "author": "Zhenya Tikhonov <masontikhonov@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_fe6c18fdeaf4cf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "18418aec-8b7c-4fa3-95b0-3ddbe93886ba",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Zhenya Tikhonov <masontikhonov@gmail.com>"
+    }
+  }
+}
